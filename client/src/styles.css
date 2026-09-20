@@ -129,6 +129,26 @@ button.secondary:hover:not(:disabled) { background: #f0f3ff; }
 .step-row span:first-child { flex: 1; }
 .step-dist { white-space: nowrap; color: #888; font-size: 0.9rem; }
 
+.plan { margin-top: 1rem; }
+.plan-status { color: #555; font-size: 0.95rem; }
+.plan-title { font-size: 1.1rem; color: #333; margin-bottom: 0.75rem; }
+.timeline { list-style: none; border-left: 3px solid #667eea; padding-left: 1rem; margin-bottom: 1rem; }
+.timeline li { position: relative; padding: 0.5rem 0; color: #555; }
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: calc(-1rem - 8px);
+  top: 0.9rem;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #667eea;
+}
+.timeline-time { font-weight: 700; color: #333; }
+.timeline-drive { font-size: 0.85rem; color: #888; margin-bottom: 0.25rem; }
+.stop-card { background: #f0f7ff; border-radius: 4px; padding: 0.75rem; }
+.stop-name { font-weight: 600; color: #333; }
+
 .places { margin-top: 1rem; }
 .places-status { color: #555; font-size: 0.9rem; margin-top: 1rem; }
 .places-list { margin-top: 0.5rem; padding-left: 1.5rem; color: #555; }

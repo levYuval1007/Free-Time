@@ -56,8 +56,24 @@ def suggest(text, country):
     ]
 
 
+def matrix(points):
+    """Driving minutes between every pair of (lon, lat) points; None where no route exists."""
+    body = json.dumps({"locations": [[lon, lat] for lon, lat in points], "metrics": ["duration"]}).encode()
+    data = _call(
+        "POST",
+        "/v2/matrix/driving-car",
+        body,
+        {"Authorization": _key(), "Content-Type": "application/json"},
+    )
+    return [[None if seconds is None else seconds / 60 for seconds in row] for row in data["durations"]]
+
+
 def route_coords(start_lon, start_lat, end_lon, end_lat):
-    body = json.dumps({"coordinates": [[start_lon, start_lat], [end_lon, end_lat]]}).encode()
+    return route_through([(start_lon, start_lat), (end_lon, end_lat)])
+
+
+def route_through(points):
+    body = json.dumps({"coordinates": [[lon, lat] for lon, lat in points]}).encode()
     data = _call(
         "POST",
         "/v2/directions/driving-car/geojson",
@@ -66,7 +82,7 @@ def route_coords(start_lon, start_lat, end_lon, end_lat):
     )
     feature = data["features"][0]
     summary = feature["properties"]["summary"]
-    steps = feature["properties"]["segments"][0]["steps"]
+    steps = [step for segment in feature["properties"]["segments"] for step in segment["steps"]]
     return {
         "km": round(summary["distance"] / 1000, 1),
         "minutes": round(summary["duration"] / 60),

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { budgetMessage } from "../lib/budgetText";
 import type { RouteResult, SelectedPlace } from "../types";
 import { NearbyPlaces } from "./NearbyPlaces";
+import { PlanCard } from "./PlanCard";
 import { RouteMap } from "./RouteMap";
 import { Steps } from "./Steps";
 
@@ -9,6 +10,7 @@ interface Props {
   from: SelectedPlace;
   to: SelectedPlace;
   data: RouteResult;
+  arriveBy?: string;
 }
 
 function Row({ name, value }: { name: string; value: string }) {
@@ -20,7 +22,7 @@ function Row({ name, value }: { name: string; value: string }) {
   );
 }
 
-export function ResultCard({ from, to, data }: Props) {
+export function ResultCard({ from, to, data, arriveBy }: Props) {
   const [showMap, setShowMap] = useState(false);
   const [showPlaces, setShowPlaces] = useState(false);
 
@@ -34,6 +36,8 @@ export function ResultCard({ from, to, data }: Props) {
         <Row name="Driving time" value={`${data.minutes} min`} />
         {data.budget && <div className={`budget ${data.budget.status}`}>{budgetMessage(data.budget)}</div>}
       </div>
+
+      {arriveBy && data.budget?.status === "ok" && <PlanCard from={from} to={to} arriveBy={arriveBy} />}
 
       <button className="secondary" onClick={() => setShowMap((v) => !v)}>
         {showMap ? "Hide" : "Show"} map &amp; directions

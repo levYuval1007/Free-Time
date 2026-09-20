@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDistance, parseArriveBy, todayHours } from "./format";
+import { clockTime, formatDistance, parseArriveBy, todayHours } from "./format";
 
 const now = new Date(2026, 8, 20, 12, 0, 0);
 
@@ -9,18 +9,43 @@ describe("parseArriveBy", () => {
   });
 
   it("returns an ISO time for a later time today", () => {
-    expect(parseArriveBy("15:30", now)).toEqual({
+    expect(parseArriveBy("2026-09-20T15:30", now)).toEqual({
       kind: "ok",
       iso: new Date(2026, 8, 20, 15, 30).toISOString(),
     });
   });
 
+  it("accepts a time tomorrow", () => {
+    expect(parseArriveBy("2026-09-21T01:00", now)).toEqual({
+      kind: "ok",
+      iso: new Date(2026, 8, 21, 1, 0).toISOString(),
+    });
+  });
+
   it("rejects a time that already passed", () => {
-    expect(parseArriveBy("11:00", now).kind).toBe("error");
+    expect(parseArriveBy("2026-09-20T11:00", now).kind).toBe("error");
   });
 
   it("rejects exactly now", () => {
-    expect(parseArriveBy("12:00", now).kind).toBe("error");
+    expect(parseArriveBy("2026-09-20T12:00", now).kind).toBe("error");
+  });
+
+  it("rejects text that is not a date", () => {
+    expect(parseArriveBy("soon", now)).toEqual({ kind: "error", message: "Arrival time is not valid." });
+  });
+});
+
+describe("clockTime", () => {
+  it("shows only the time for today", () => {
+    expect(clockTime(new Date(2026, 8, 20, 18, 5).toISOString(), now)).toBe("18:05");
+  });
+
+  it("marks times on the next day", () => {
+    expect(clockTime(new Date(2026, 8, 21, 1, 30).toISOString(), now)).toBe("01:30 tomorrow");
+  });
+
+  it("shows the date for later days", () => {
+    expect(clockTime(new Date(2026, 8, 23, 9, 0).toISOString(), now)).toContain("09:00 (");
   });
 });
 

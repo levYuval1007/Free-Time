@@ -5,13 +5,28 @@ export type ArriveByResult =
 
 export function parseArriveBy(value: string, now: Date = new Date()): ArriveByResult {
   if (!value) return { kind: "none" };
-  const [hours, minutes] = value.split(":").map(Number);
-  const target = new Date(now);
-  target.setHours(hours, minutes, 0, 0);
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) {
+    return { kind: "error", message: "Arrival time is not valid." };
+  }
   if (target <= now) {
-    return { kind: "error", message: "Arrival time must be later than now (today only)." };
+    return { kind: "error", message: "Arrival time must be later than now." };
   }
   return { kind: "ok", iso: target.toISOString() };
+}
+
+export function clockTime(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const dayDifference = Math.round(
+    (new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() -
+      new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
+      86_400_000,
+  );
+  if (dayDifference === 0) return time;
+  if (dayDifference === 1) return `${time} tomorrow`;
+  return `${time} (${date.toLocaleDateString()})`;
 }
 
 export function formatDistance(meters: number): string {

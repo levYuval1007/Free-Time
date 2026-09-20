@@ -50,6 +50,35 @@ export interface RouteResult {
   budget?: Budget;
 }
 
+export interface PlannedStop {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  primary_type?: string;
+  rating?: number;
+  rating_count?: number;
+  maps_uri?: string;
+  weekday_text?: string[];
+  drive_minutes: number;
+  arrive: string;
+  leave: string;
+  visit_minutes: number;
+}
+
+export type PlanReason = "impossible" | "not_enough_time" | "no_candidates" | "no_feasible_plan";
+
+export interface PlanResult {
+  budget: Budget;
+  stops: PlannedStop[];
+  reason?: PlanReason;
+  depart?: string;
+  arrive_destination?: string;
+  final_drive_minutes?: number;
+  geometry?: [number, number][];
+  candidates_considered: number;
+}
+
 export interface NearbyPlace {
   id: string;
   name: string;

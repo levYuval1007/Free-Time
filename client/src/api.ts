@@ -1,6 +1,7 @@
 import type {
   Country,
   NearbyResult,
+  PlanResult,
   ResolvedPlace,
   RouteResult,
   SuggestResponse,
@@ -45,6 +46,14 @@ export const api = {
     arriveBy?: string,
   ) =>
     getJson<RouteResult>("/api/route", {
+      from_lon: from.lon,
+      from_lat: from.lat,
+      to_lon: to.lon,
+      to_lat: to.lat,
+      arrive_by: arriveBy,
+    }),
+  plan: (from: { lon: number; lat: number }, to: { lon: number; lat: number }, arriveBy: string) =>
+    getJson<PlanResult>("/api/plan", {
       from_lon: from.lon,
       from_lat: from.lat,
       to_lon: to.lon,

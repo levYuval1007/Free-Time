@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { presetTime, timeSlots } from "../lib/arrival";
+import { presetSlot, timeSlots } from "../lib/arrival";
 
 const PRESETS = [
   { label: "In 1 hour", hours: 1 },
@@ -22,40 +22,56 @@ export function ArrivalTimePicker({ value, onChange }: Props) {
   }, []);
 
   const slots = timeSlots(now);
-  const presets = PRESETS.map((preset) => ({ ...preset, time: presetTime(now, preset.hours) })).filter(
-    (preset): preset is { label: string; hours: number; time: string } => preset.time !== null,
-  );
+  const today = slots.filter((slot) => !slot.tomorrow);
+  const tomorrow = slots.filter((slot) => slot.tomorrow);
+  const presets = PRESETS.map((preset) => ({ ...preset, slot: presetSlot(now, preset.hours) }));
 
   return (
     <div className="form-group">
-      <label htmlFor={selectId}>Arrive by (optional, today)</label>
-      {presets.length > 0 && (
-        <div className="chips" role="group" aria-label="Quick arrival times">
-          {presets.map((preset) => {
-            const active = value === preset.time;
-            return (
-              <button
-                key={preset.hours}
-                type="button"
-                className={`chip${active ? " active" : ""}`}
-                aria-pressed={active}
-                onClick={() => onChange(active ? "" : preset.time)}
-              >
-                {preset.label}
-                <span className="chip-time">{preset.time}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <select id={selectId} value={value} disabled={slots.length === 0} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{slots.length === 0 ? "No more times today" : "No arrival time"}</option>
-        {value !== "" && !slots.includes(value) && <option value={value}>{value}</option>}
-        {slots.map((slot) => (
-          <option key={slot} value={slot}>
-            {slot}
-          </option>
-        ))}
+      <label htmlFor={selectId}>Arrive by (optional)</label>
+      <div className="chips" role="group" aria-label="Quick arrival times">
+        {presets.map(({ label, hours, slot }) => {
+          const active = value === slot.value;
+          return (
+            <button
+              key={hours}
+              type="button"
+              className={`chip${active ? " active" : ""}`}
+              aria-pressed={active}
+              onClick={() => onChange(active ? "" : slot.value)}
+            >
+              {label}
+              <span className="chip-time">
+                {slot.time}
+                {slot.tomorrow ? " tomorrow" : ""}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <select id={selectId} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">No arrival time</option>
+        {value !== "" && !slots.some((slot) => slot.value === value) && (
+          <option value={value}>{value.slice(11)} (passed)</option>
+        )}
+        {today.length > 0 && (
+          <optgroup label="Today">
+            {today.map((slot) => (
+              <option key={slot.value} value={slot.value}>
+                {slot.time}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {tomorrow.length > 0 && (
+          <optgroup label="Tomorrow">
+            {tomorrow.map((slot) => (
+              <option key={slot.value} value={slot.value}>
+                {slot.time} (tomorrow)
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </div>
   );

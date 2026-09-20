@@ -12,6 +12,7 @@ interface CalculatedRoute {
   from: SelectedPlace;
   to: SelectedPlace;
   data: RouteResult;
+  arriveBy?: string;
 }
 
 export default function App() {
@@ -50,8 +51,9 @@ export default function App() {
     }
     setLoading(true);
     try {
-      const data = await api.route(from, to, arrival.kind === "ok" ? arrival.iso : undefined);
-      setResult({ id: Date.now(), from, to, data });
+      const arriveBy = arrival.kind === "ok" ? arrival.iso : undefined;
+      const data = await api.route(from, to, arriveBy);
+      setResult({ id: Date.now(), from, to, data, arriveBy });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -95,7 +97,9 @@ export default function App() {
       </button>
 
       {loading && <div className="loading">Loading...</div>}
-      {result && <ResultCard key={result.id} from={result.from} to={result.to} data={result.data} />}
+      {result && (
+        <ResultCard key={result.id} from={result.from} to={result.to} data={result.data} arriveBy={result.arriveBy} />
+      )}
     </div>
   );
 }
