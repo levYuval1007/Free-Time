@@ -1,6 +1,5 @@
 import type {
-  Country,
-  NearbyResult,
+  Coordinates,
   PlanResult,
   ResolvedPlace,
   RouteResult,
@@ -35,9 +34,8 @@ export function errorMessage(err: unknown): string {
 }
 
 export const api = {
-  countries: () => getJson<{ countries: Country[] }>("/api/countries").then((r) => r.countries),
-  suggest: (country: string, q: string, session: string) =>
-    getJson<SuggestResponse>("/api/suggest", { country, q, session }),
+  suggest: (q: string, session: string, bias?: Coordinates | null) =>
+    getJson<SuggestResponse>("/api/suggest", { q, session, lat: bias?.lat, lon: bias?.lon }),
   resolve: (placeId: string, session: string) =>
     getJson<ResolvedPlace>("/api/places/resolve", { place_id: placeId, session }),
   route: (
@@ -60,6 +58,4 @@ export const api = {
       to_lat: to.lat,
       arrive_by: arriveBy,
     }),
-  nearby: (lat: number, lon: number, radius = 3000) =>
-    getJson<NearbyResult>("/api/places/nearby", { lat, lon, radius }),
 };

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { errorMessage } from "../api";
 
 interface Item {
@@ -8,11 +8,13 @@ interface Item {
 interface Props<T extends Item> {
   label: string;
   placeholder: string;
-  disabled?: boolean;
+  text: string;
+  onTextChange: (text: string) => void;
   minChars: number;
   delayMs: number;
-  openOnFocus?: boolean;
   status?: string;
+  adornment?: ReactNode;
+  committedText?: string | null;
   search: (text: string) => Promise<T[]>;
   onSelect: (item: T) => void;
   onEdit: () => void;
@@ -20,9 +22,8 @@ interface Props<T extends Item> {
 }
 
 export function Autocomplete<T extends Item>(props: Props<T>) {
-  const { label, placeholder, disabled, minChars, delayMs, openOnFocus, status } = props;
+  const { label, placeholder, text, onTextChange, minChars, delayMs, status, adornment } = props;
   const inputId = useId();
-  const [text, setText] = useState("");
   const [items, setItems] = useState<T[]>([]);
   const [open, setOpen] = useState(false);
   const typed = useRef(false);
@@ -43,7 +44,7 @@ export function Autocomplete<T extends Item>(props: Props<T>) {
   }
 
   useEffect(() => {
-    if (!typed.current) return;
+    if (!typed.current || text === latest.current.committedText) return;
     requestId.current++;
     const query = text.trim();
     if (query.length < minChars) {
@@ -58,7 +59,6 @@ export function Autocomplete<T extends Item>(props: Props<T>) {
   function pick(item: T) {
     typed.current = false;
     requestId.current++;
-    setText(item.label);
     setItems([]);
     setOpen(false);
     props.onSelect(item);
@@ -73,21 +73,15 @@ export function Autocomplete<T extends Item>(props: Props<T>) {
           type="text"
           value={text}
           placeholder={placeholder}
-          disabled={disabled}
           autoComplete="off"
           onChange={(e) => {
             typed.current = true;
-            setText(e.target.value);
+            onTextChange(e.target.value);
             props.onEdit();
-          }}
-          onFocus={() => {
-            if (openOnFocus && !status) {
-              typed.current = true;
-              void runSearch(text.trim());
-            }
           }}
           onBlur={() => setOpen(false)}
         />
+        {adornment}
         {open && (
           <div className="suggestions">
             {items.map((item, index) => (
@@ -106,7 +100,7 @@ export function Autocomplete<T extends Item>(props: Props<T>) {
           </div>
         )}
       </div>
-      <div className="selected">{status}</div>
+      {status && <div className="field-status">{status}</div>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
-export interface Country {
-  code: string;
-  name: string;
+export interface Coordinates {
+  lat: number;
+  lon: number;
 }
 
 export interface Suggestion {
@@ -76,25 +76,15 @@ export interface PlanResult {
   arrive_destination?: string;
   final_drive_minutes?: number;
   geometry?: [number, number][];
+  steps?: RouteStep[];
   candidates_considered: number;
 }
 
-export interface NearbyPlace {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-  types: string[];
-  primary_type?: string;
-  rating?: number;
-  rating_count?: number;
-  business_status?: string;
-  weekday_text?: string[];
-  maps_uri?: string;
-}
-
-export interface NearbyResult {
-  places: NearbyPlace[];
-  latency_ms: number;
-  stats: { requests: number; errors: number; estimated_cost_usd: number };
+export interface TripResult {
+  from: SelectedPlace;
+  to: SelectedPlace;
+  arriveBy?: string;
+  route: RouteResult;
+  plan?: PlanResult;
+  planError?: string;
 }

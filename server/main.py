@@ -1,7 +1,5 @@
 import logging
 import math
-import re
-import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +13,6 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import budget
-import countries
 import ors
 import places
 import planner
@@ -23,21 +20,10 @@ import planner
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("server")
 
-COUNTRY_PATTERN = r"^[A-Za-z]{2}$"
 SESSION_PATTERN = r"^[A-Za-z0-9_-]{1,36}$"
 PLACE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,300}$"
-PLACE_TYPE_RE = re.compile(r"[a-z_]{1,40}")
 
 app = FastAPI(title="freeTime API")
-
-
-class Country(BaseModel):
-    code: str
-    name: str
-
-
-class CountriesResponse(BaseModel):
-    countries: list[Country]
 
 
 class Suggestion(BaseModel):
@@ -79,35 +65,6 @@ class RouteResponse(BaseModel):
     budget: Budget | None = None
 
 
-class Place(BaseModel):
-    id: str
-    name: str
-    lat: float
-    lon: float
-    types: list[str]
-    primary_type: str | None = None
-    rating: float | None = None
-    rating_count: int | None = None
-    price_level: str | None = None
-    business_status: str | None = None
-    periods: list[dict] | None = None
-    weekday_text: list[str] | None = None
-    utc_offset_minutes: int | None = None
-    maps_uri: str | None = None
-
-
-class PlacesStats(BaseModel):
-    requests: int
-    errors: int
-    estimated_cost_usd: float
-
-
-class NearbyResponse(BaseModel):
-    places: list[Place]
-    latency_ms: int
-    stats: PlacesStats
-
-
 class PlannedStop(BaseModel):
     id: str
     name: str
@@ -132,6 +89,7 @@ class PlanResponse(BaseModel):
     arrive_destination: str | None = None
     final_drive_minutes: float | None = None
     geometry: list[list[float]] | None = None
+    steps: list[RouteStep] | None = None
     candidates_considered: int = 0
 
 
@@ -156,27 +114,21 @@ async def places_error_handler(request: Request, exc: places.PlacesError):
     return JSONResponse(status_code=502, content={"error": str(exc), "transient": exc.transient})
 
 
-@app.exception_handler(countries.CountriesError)
-async def countries_error_handler(request: Request, exc: countries.CountriesError):
-    return JSONResponse(status_code=502, content={"error": str(exc)})
-
-
-@app.get("/api/countries", response_model=CountriesResponse)
-def get_countries():
-    return {"countries": countries.load_countries()}
-
-
 @app.get("/api/suggest", response_model=SuggestResponse, response_model_exclude_none=True)
 def suggest(
-    country: str = Query(pattern=COUNTRY_PATTERN),
     q: str = Query(min_length=3, max_length=200),
     session: str = Query(pattern=SESSION_PATTERN),
+    lat: float | None = Query(default=None, ge=-90, le=90),
+    lon: float | None = Query(default=None, ge=-180, le=180),
 ):
+    if (lat is None) != (lon is None):
+        raise HTTPException(400, "lat and lon must be given together")
+    bias = None if lat is None else (lat, lon)
     try:
-        return {"provider": "google", "suggestions": places.autocomplete(q, country, session)}
+        return {"provider": "google", "suggestions": places.autocomplete(q, session, bias)}
     except places.PlacesError as err:
         log.warning("Google autocomplete failed, falling back to ORS: %s", err)
-        return {"provider": "ors", "suggestions": ors.suggest(q, country)}
+        return {"provider": "ors", "suggestions": ors.suggest(q, bias)}
 
 
 @app.get("/api/places/resolve", response_model=ResolvedPlace)
@@ -185,25 +137,6 @@ def resolve_place(
     session: str = Query(pattern=SESSION_PATTERN),
 ):
     return places.place_location(place_id, session)
-
-
-@app.get("/api/places/nearby", response_model=NearbyResponse)
-def nearby_places(
-    lat: float = Query(ge=-90, le=90),
-    lon: float = Query(ge=-180, le=180),
-    radius: int = Query(default=3000, ge=1, le=places.MAX_RADIUS_M),
-    types: str | None = None,
-):
-    type_list = [t for t in (types or "").split(",") if t] or None
-    if type_list and (len(type_list) > 10 or not all(PLACE_TYPE_RE.fullmatch(t) for t in type_list)):
-        raise HTTPException(400, "types must be up to 10 comma-separated place type names")
-    started = time.perf_counter()
-    found = places.search_nearby(lat, lon, radius, type_list)
-    return {
-        "places": found,
-        "latency_ms": round((time.perf_counter() - started) * 1000),
-        "stats": places.stats(),
-    }
 
 
 @app.get("/api/route", response_model=RouteResponse, response_model_exclude_none=True)
@@ -289,6 +222,7 @@ def plan(
         "arrive_destination": chosen["arrive_destination"].isoformat(),
         "final_drive_minutes": round(chosen["final_drive_minutes"], 1),
         "geometry": route["geometry"],
+        "steps": route["steps"],
         "candidates_considered": len(candidates),
     }
 

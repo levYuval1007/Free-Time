@@ -1,59 +1,54 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, errorMessage } from "./api";
 import { ArrivalTimePicker } from "./components/ArrivalTimePicker";
-import { CountryField } from "./components/CountryField";
 import { PlaceField } from "./components/PlaceField";
-import { ResultCard } from "./components/ResultCard";
+import { ResultPanel } from "./components/ResultPanel";
+import { TripMap } from "./components/TripMap";
+import { useUserLocation } from "./hooks/useUserLocation";
 import { parseArriveBy } from "./lib/format";
-import type { Country, RouteResult, SelectedPlace } from "./types";
-
-interface CalculatedRoute {
-  id: number;
-  from: SelectedPlace;
-  to: SelectedPlace;
-  data: RouteResult;
-  arriveBy?: string;
-}
+import type { PlanResult, SelectedPlace, TripResult } from "./types";
 
 export default function App() {
-  const [countries, setCountries] = useState<Country[]>([]);
-  const [country, setCountry] = useState<Country | null>(null);
+  const { location, request: requestLocation } = useUserLocation();
   const [from, setFrom] = useState<SelectedPlace | null>(null);
   const [to, setTo] = useState<SelectedPlace | null>(null);
   const [arrive, setArrive] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<CalculatedRoute | null>(null);
+  const [result, setResult] = useState<TripResult | null>(null);
+  const [activeStop, setActiveStop] = useState<string | null>(null);
 
-  useEffect(() => {
-    api
-      .countries()
-      .then(setCountries)
-      .catch((err) => setError(errorMessage(err)));
-  }, []);
-
-  function changeCountry(next: Country | null) {
-    setCountry(next);
-    setFrom(null);
-    setTo(null);
-    setResult(null);
-    if (next) setError(null);
+  function changePlace(set: (place: SelectedPlace | null) => void) {
+    return (place: SelectedPlace | null) => {
+      set(place);
+      setResult(null);
+      setActiveStop(null);
+      if (place) setError(null);
+    };
   }
 
-  async function calculate() {
+  async function planTrip() {
     if (!from || !to) return;
     setError(null);
     setResult(null);
+    setActiveStop(null);
     const arrival = parseArriveBy(arrive);
     if (arrival.kind === "error") {
       setError(arrival.message);
       return;
     }
+    const arriveBy = arrival.kind === "ok" ? arrival.iso : undefined;
     setLoading(true);
     try {
-      const arriveBy = arrival.kind === "ok" ? arrival.iso : undefined;
-      const data = await api.route(from, to, arriveBy);
-      setResult({ id: Date.now(), from, to, data, arriveBy });
+      // The plan endpoint only pays for a places search when there is free time, so both can run together.
+      const planning: Promise<{ plan?: PlanResult; planError?: string }> = arriveBy
+        ? api
+            .plan(from, to, arriveBy)
+            .then((plan) => ({ plan }))
+            .catch((err) => ({ planError: errorMessage(err) }))
+        : Promise.resolve({});
+      const [route, planned] = await Promise.all([api.route(from, to, arriveBy), planning]);
+      setResult({ from, to, arriveBy, route, ...planned });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -61,45 +56,58 @@ export default function App() {
     }
   }
 
+  const stops = result?.plan?.stops ?? [];
+  const geometry = stops.length > 0 ? result?.plan?.geometry : result?.route.geometry;
+
   return (
-    <div className="card">
-      <h1>🚗 Travel Time</h1>
+    <div className="app">
+      <div className="map-area">
+        <TripMap
+          from={from}
+          to={to}
+          geometry={geometry}
+          stops={stops}
+          activeStopId={activeStop}
+          onSelectStop={setActiveStop}
+          center={location}
+        />
+      </div>
 
-      {error && <div className="error">{error}</div>}
+      <main className="panel">
+        <header>
+          <h1>freeTime</h1>
+          <p className="tagline">Make the most of the time before you have to be there.</p>
+        </header>
 
-      <CountryField countries={countries} selected={country} onChange={changeCountry} onError={setError} />
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
 
-      <PlaceField
-        key={`from-${country?.code ?? "none"}`}
-        label="Starting location"
-        country={country?.code ?? null}
-        onChange={(place) => {
-          setFrom(place);
-          if (place) setError(null);
-        }}
-        onError={setError}
-      />
-      <PlaceField
-        key={`to-${country?.code ?? "none"}`}
-        label="Destination"
-        country={country?.code ?? null}
-        onChange={(place) => {
-          setTo(place);
-          if (place) setError(null);
-        }}
-        onError={setError}
-      />
+        <PlaceField
+          label="From"
+          placeholder="Where are you now?"
+          bias={location}
+          onChange={changePlace(setFrom)}
+          onError={setError}
+          onRequestLocation={requestLocation}
+        />
+        <PlaceField
+          label="To"
+          placeholder="Where do you need to be?"
+          bias={location}
+          onChange={changePlace(setTo)}
+          onError={setError}
+        />
+        <ArrivalTimePicker value={arrive} onChange={setArrive} />
 
-      <ArrivalTimePicker value={arrive} onChange={setArrive} />
+        <button className="primary" disabled={!from || !to || loading} onClick={() => void planTrip()}>
+          {loading ? "Planning your trip..." : "Plan my trip"}
+        </button>
 
-      <button disabled={!from || !to || loading} onClick={() => void calculate()}>
-        Calculate
-      </button>
-
-      {loading && <div className="loading">Loading...</div>}
-      {result && (
-        <ResultCard key={result.id} from={result.from} to={result.to} data={result.data} arriveBy={result.arriveBy} />
-      )}
+        {result && <ResultPanel result={result} activeStopId={activeStop} onSelectStop={setActiveStop} />}
+      </main>
     </div>
   );
 }

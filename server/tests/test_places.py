@@ -134,22 +134,36 @@ class AutocompleteTests(PlacesTestBase):
             self.suggestion("p1", "Dizengoff 50, Tel Aviv, Israel"),
             {"queryPrediction": {"text": {"text": "dizengoff street"}}},
         )
-        result = places.autocomplete("dizengoff 50", "IL", "session-1")
+        result = places.autocomplete("dizengoff 50", "session-1")
         self.assertEqual(result, [{"label": "Dizengoff 50, Tel Aviv, Israel", "place_id": "p1"}])
 
-    def test_request_is_restricted_to_country_and_session(self):
+    def test_request_carries_the_session_and_key(self):
         self.client.request.return_value = ok_suggestions()
-        places.autocomplete("herzl", "IL", "session-1")
+        places.autocomplete("herzl", "session-1")
         method, path, body, headers = self.client.request.call_args.args
         payload = json.loads(body)
-        self.assertEqual(payload["includedRegionCodes"], ["il"])
         self.assertEqual(payload["sessionToken"], "session-1")
         self.assertEqual(path, "/v1/places:autocomplete")
         self.assertEqual(headers["X-Goog-Api-Key"], "test-key")
 
+    def test_without_a_bias_there_is_no_location_restriction(self):
+        self.client.request.return_value = ok_suggestions()
+        places.autocomplete("herzl", "session-1")
+        payload = json.loads(self.client.request.call_args.args[2])
+        self.assertNotIn("locationBias", payload)
+        self.assertNotIn("includedRegionCodes", payload)
+
+    def test_bias_ranks_places_near_the_user_first(self):
+        self.client.request.return_value = ok_suggestions()
+        places.autocomplete("herzl", "session-1", bias=(32.08, 34.78))
+        payload = json.loads(self.client.request.call_args.args[2])
+        circle = payload["locationBias"]["circle"]
+        self.assertEqual(circle["center"], {"latitude": 32.08, "longitude": 34.78})
+        self.assertEqual(circle["radius"], 50000.0)
+
     def test_no_suggestions_returns_empty_list(self):
         self.client.request.return_value = 200, b"{}"
-        self.assertEqual(places.autocomplete("zzzz", "IL", "s"), [])
+        self.assertEqual(places.autocomplete("zzzz", "s"), [])
 
 
 class PlaceLocationTests(PlacesTestBase):

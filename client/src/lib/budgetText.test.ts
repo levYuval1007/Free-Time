@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Budget } from "../types";
-import { budgetMessage } from "./budgetText";
+import { budgetMessage, planReasonMessage } from "./budgetText";
 
 const budget = (overrides: Partial<Budget>): Budget => ({
   status: "ok",
@@ -29,5 +29,17 @@ describe("budgetMessage", () => {
     expect(budgetMessage(budget({ status: "impossible", free_minutes: 0 }))).toBe(
       "You can't arrive by then, even by driving straight there.",
     );
+  });
+});
+
+describe("planReasonMessage", () => {
+  it("explains every reason in plain words", () => {
+    for (const reason of ["impossible", "not_enough_time", "no_candidates", "no_feasible_plan"] as const) {
+      expect(planReasonMessage(reason).length).toBeGreaterThan(20);
+    }
+  });
+
+  it("suggests heading straight there when there is no free time", () => {
+    expect(planReasonMessage("not_enough_time")).toContain("head straight there");
   });
 });

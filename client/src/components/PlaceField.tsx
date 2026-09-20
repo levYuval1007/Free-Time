@@ -1,20 +1,26 @@
 import { useRef, useState } from "react";
 import { api, errorMessage } from "../api";
 import { newSessionId } from "../lib/format";
-import type { SelectedPlace, Suggestion } from "../types";
+import type { Coordinates, SelectedPlace, Suggestion } from "../types";
 import { Autocomplete } from "./Autocomplete";
+
+const MY_LOCATION = "My location";
 
 interface Props {
   label: string;
-  country: string | null;
+  placeholder: string;
+  bias: Coordinates | null;
   onChange: (place: SelectedPlace | null) => void;
   onError: (message: string) => void;
+  onRequestLocation?: () => Promise<Coordinates>;
 }
 
-export function PlaceField({ label, country, onChange, onError }: Props) {
+export function PlaceField({ label, placeholder, bias, onChange, onError, onRequestLocation }: Props) {
   const session = useRef<string | null>(null);
   const version = useRef(0);
+  const [text, setText] = useState("");
   const [status, setStatus] = useState("");
+  const [committed, setCommitted] = useState<string | null>(null);
 
   function sessionId(): string {
     session.current ??= newSessionId();
@@ -26,6 +32,7 @@ export function PlaceField({ label, country, onChange, onError }: Props) {
     const sid = sessionId();
     session.current = null;
     const myVersion = version.current;
+    setText(item.label);
     let place: SelectedPlace;
     if (item.lon != null && item.lat != null) {
       place = { label: item.label, lon: item.lon, lat: item.lat };
@@ -43,28 +50,57 @@ export function PlaceField({ label, country, onChange, onError }: Props) {
       }
     }
     if (myVersion !== version.current) return;
-    setStatus(`Selected: ${place.label}`);
+    setStatus("");
+    setCommitted(place.label);
     onChange(place);
+  }
+
+  async function useMyLocation() {
+    if (!onRequestLocation) return;
+    const myVersion = ++version.current;
+    setStatus("Locating...");
+    try {
+      const here = await onRequestLocation();
+      if (myVersion !== version.current) return;
+      setText(MY_LOCATION);
+      setCommitted(MY_LOCATION);
+      setStatus("");
+      onChange({ label: MY_LOCATION, lat: here.lat, lon: here.lon });
+    } catch (err) {
+      if (myVersion !== version.current) return;
+      setStatus("");
+      onError(errorMessage(err));
+    }
   }
 
   function edit() {
     version.current++;
     setStatus("");
+    setCommitted(null);
     onChange(null);
   }
 
   return (
     <Autocomplete<Suggestion>
       label={label}
-      placeholder={country ? "Type at least 3 letters..." : "Choose a country first"}
-      disabled={!country}
+      placeholder={placeholder}
+      text={text}
+      onTextChange={setText}
       minChars={3}
       delayMs={150}
       status={status}
-      search={async (text) => {
-        if (!country) return [];
-        return (await api.suggest(country, text, sessionId())).suggestions;
-      }}
+      committedText={committed}
+      adornment={
+        onRequestLocation && (
+          <button type="button" className="icon-button" aria-label="Use my location" title="Use my location" onClick={() => void useMyLocation()}>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
+              <path d="M12 2v4M12 18v4M2 12h4M18 12h4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+        )
+      }
+      search={async (query) => (await api.suggest(query, sessionId(), bias)).suggestions}
       onSelect={(item) => void select(item)}
       onEdit={edit}
       onError={onError}

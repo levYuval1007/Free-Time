@@ -43,11 +43,12 @@ def geocode(place, country):
     return lon, lat, feature["properties"].get("label", place)
 
 
-def suggest(text, country):
-    query = urllib.parse.urlencode(
-        {"api_key": _key(), "text": text, "size": 5, "boundary.country": country}
-    )
-    data = _call("GET", f"/geocode/autocomplete?{query}")
+def suggest(text, bias=None):
+    """Place suggestions; bias is an optional (lat, lon) that ranks nearby places first."""
+    params = {"api_key": _key(), "text": text, "size": 5}
+    if bias:
+        params["focus.point.lat"], params["focus.point.lon"] = bias
+    data = _call("GET", f"/geocode/autocomplete?{urllib.parse.urlencode(params)}")
     return [
         {"label": f["properties"].get("label", f["properties"].get("name", "")),
          "lon": f["geometry"]["coordinates"][0],

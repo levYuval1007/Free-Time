@@ -168,15 +168,15 @@ def search_nearby(lat, lon, radius_m, types=None, max_results=20):
     return found
 
 
-def autocomplete(text, country, session_token):
-    body = json.dumps(
-        {
-            "input": text,
-            "includedRegionCodes": [country.lower()],
-            "languageCode": "en",
-            "sessionToken": session_token,
+def autocomplete(text, session_token, bias=None):
+    """Place suggestions; bias is an optional (lat, lon) that ranks nearby places first."""
+    request = {"input": text, "languageCode": "en", "sessionToken": session_token}
+    if bias:
+        lat, lon = bias
+        request["locationBias"] = {
+            "circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(MAX_RADIUS_M)}
         }
-    ).encode()
+    body = json.dumps(request).encode()
     data = _request(
         "autocomplete", "POST", AUTOCOMPLETE_PATH, body, AUTOCOMPLETE_FIELD_MASK, COST_AUTOCOMPLETE_IN_SESSION
     )

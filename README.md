@@ -1,6 +1,6 @@
 # freeTime / travel-time
 
-Pick a country, choose two places (Google autocomplete, falls back to OpenRouteService), and get the driving distance and time. Optionally add an arrival time to see how much free time you have, view the route on a map, and find places near the destination.
+Enter where you are, where you need to be, and when. freeTime shows the route and, when there is free time before the deadline, suggests up to three places to visit on the way (Google Places), scheduled around opening hours and driving times. Places are chosen with Google autocomplete (falling back to OpenRouteService), the layout is mobile-first (map on top with the plan below; side by side on desktop), and "Open in Google Maps" hands the plan to navigation.
 
 ```
 server/   FastAPI backend (Python)      client/   React + TypeScript UI (Vite)
