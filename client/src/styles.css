@@ -23,7 +23,8 @@ h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #333; }
 .form-group { margin-bottom: 1.5rem; }
 label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: #555; font-size: 0.95rem; }
 
-input {
+input,
+select {
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #ddd;
@@ -32,8 +33,27 @@ input {
   font-family: inherit;
   background: white;
 }
-input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
-input:disabled { background: #f3f3f3; cursor: not-allowed; }
+input:focus,
+select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+input:disabled,
+select:disabled { background: #f3f3f3; cursor: not-allowed; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.chips .chip {
+  width: auto;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: white;
+  color: #667eea;
+  border: 2px solid #667eea;
+  font-size: 0.9rem;
+}
+.chips .chip:hover:not(:disabled) { background: #f0f3ff; }
+.chips .chip.active { background: #667eea; color: white; }
+.chip-time { font-size: 0.8rem; font-weight: 400; opacity: 0.85; }
 
 .combo { position: relative; }
 .suggestions {

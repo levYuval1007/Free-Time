@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "./api";
+import { ArrivalTimePicker } from "./components/ArrivalTimePicker";
 import { CountryField } from "./components/CountryField";
 import { PlaceField } from "./components/PlaceField";
 import { ResultCard } from "./components/ResultCard";
@@ -87,10 +88,7 @@ export default function App() {
         onError={setError}
       />
 
-      <div className="form-group">
-        <label htmlFor="arrive">Arrive by (optional, today)</label>
-        <input id="arrive" type="time" value={arrive} onChange={(e) => setArrive(e.target.value)} />
-      </div>
+      <ArrivalTimePicker value={arrive} onChange={setArrive} />
 
       <button disabled={!from || !to || loading} onClick={() => void calculate()}>
         Calculate

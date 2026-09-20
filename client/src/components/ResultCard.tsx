@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Budget, RouteResult, SelectedPlace } from "../types";
+import { budgetMessage } from "../lib/budgetText";
+import type { RouteResult, SelectedPlace } from "../types";
 import { NearbyPlaces } from "./NearbyPlaces";
 import { RouteMap } from "./RouteMap";
 import { Steps } from "./Steps";
@@ -17,17 +18,6 @@ function Row({ name, value }: { name: string; value: string }) {
       <span dir="auto">{value}</span>
     </div>
   );
-}
-
-function budgetMessage(budget: Budget): string {
-  switch (budget.status) {
-    case "ok":
-      return `You have ${budget.free_minutes} free minutes (drive ${budget.drive_minutes} min + ${budget.buffer_minutes} min buffer).`;
-    case "go_direct":
-      return `Only ${budget.free_minutes} free minutes after the drive and buffer - head straight there.`;
-    case "impossible":
-      return "You can't arrive by then, even by driving straight there.";
-  }
 }
 
 export function ResultCard({ from, to, data }: Props) {
