@@ -23,7 +23,7 @@ log = logging.getLogger("server")
 SESSION_PATTERN = r"^[A-Za-z0-9_-]{1,36}$"
 PLACE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,300}$"
 
-app = FastAPI(title="freeTime API")
+app = FastAPI(title="Leeway API")
 
 
 class Suggestion(BaseModel):

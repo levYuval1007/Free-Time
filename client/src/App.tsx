@@ -75,8 +75,13 @@ export default function App() {
 
       <main className="panel">
         <header>
-          <h1>freeTime</h1>
-          <p className="tagline">Make the most of the time before you have to be there.</p>
+          <div className="brand">
+            <img className="logo" src="/logo.svg" alt="" width={40} height={40} />
+            <div>
+              <h1>Leeway</h1>
+              <p className="tagline">Make the most of the time before you have to be there.</p>
+            </div>
+          </div>
         </header>
 
         {error && (
