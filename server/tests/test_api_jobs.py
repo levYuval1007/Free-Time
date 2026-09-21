@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi.testclient import TestClient
 
 import jobs
+import limits
 import main
 import places
 import planning
@@ -37,9 +38,12 @@ class JobApiTests(unittest.TestCase):
             return done()
 
         planning.execute_plan = fake
+        self.original_guard = limits.guard
+        limits.guard = limits.Guard(per_ip_per_hour=2, plans_per_day=100, daily_tokens=1)
 
     def tearDown(self):
         planning.execute_plan = self.original
+        limits.guard = self.original_guard
 
     def poll(self, job_id):
         for _ in range(300):
@@ -82,12 +86,29 @@ class JobApiTests(unittest.TestCase):
         self.assertEqual(bad_key.status_code, 400)
         self.assertIn("error", bad_key.json())
 
+    def test_too_many_plans_from_one_address_get_429(self):
+        self.assertEqual(self.client.post("/api/plans", json=BODY).status_code, 202)
+        self.assertEqual(self.client.post("/api/plans", json=BODY).status_code, 202)
+        limited = self.client.post("/api/plans", json=BODY)
+        self.assertEqual(limited.status_code, 429)
+        self.assertIn("error", limited.json())
+        self.assertGreater(int(limited.headers["Retry-After"]), 0)
+
+    def test_replaying_a_key_is_not_blocked_or_counted(self):
+        headers = {"Idempotency-Key": "abcdefgh-1234"}
+        first = self.client.post("/api/plans", json=BODY, headers=headers)
+        for _ in range(5):
+            self.assertEqual(self.client.post("/api/plans", json=BODY, headers=headers).status_code, 200)
+        self.assertEqual(limits.guard.snapshot()["plans_today"], 1)
+        self.assertEqual(first.status_code, 202)
+
     def test_unknown_job_is_404(self):
         res = self.client.get("/api/plans/nope")
         self.assertEqual(res.status_code, 404)
         self.assertIn("plan again", res.json()["error"].lower())
 
     def test_busy_server_answers_503_with_retry_after(self):
+        limits.guard = limits.Guard(per_ip_per_hour=10, plans_per_day=100, daily_tokens=1)
         planning.execute_plan = lambda request, progress: time.sleep(0.3) or done()
         self.assertEqual(self.client.post("/api/plans", json=BODY).status_code, 202)
         self.assertEqual(self.client.post("/api/plans", json=BODY).status_code, 202)

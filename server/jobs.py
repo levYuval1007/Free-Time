@@ -88,6 +88,11 @@ class JobStore:
                 self._by_key[key] = job.id
             return job, True
 
+    def has_key(self, key: str) -> bool:
+        with self._lock:
+            self._purge()
+            return key in self._by_key
+
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             self._purge()

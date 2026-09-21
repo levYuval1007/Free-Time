@@ -12,6 +12,7 @@ import agent
 import agent_tools
 import budget
 import config
+import limits
 import ors
 import places
 import planner
@@ -45,6 +46,9 @@ class Deps:
     route_through: Callable = ors.route_through
     make_client: Callable = agent.make_client
     agent_enabled: Callable = lambda: bool(config.get("ANTHROPIC_API_KEY"))
+    # False once the day's token budget is spent; plans then use the rule-based planner.
+    budget_ok: Callable = limits.guard.agent_allowed
+    record_usage: Callable = limits.guard.record_usage
 
 
 @dataclass
@@ -137,6 +141,10 @@ def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, n
     if not deps.agent_enabled():
         return PlanOutcome("succeeded", baseline_plan(request, free_time, now, deps))
 
+    if not deps.budget_ok():
+        log.warning("daily agent token budget is used up; using the rule-based planner")
+        return PlanOutcome("degraded", baseline_plan(request, free_time, now, deps), "daily_budget")
+
     ctx = validator.TripContext(
         now=now, arrive_by=request.arrive_by, buffer_minutes=free_time["buffer_minutes"],
         origin=request.origin, destination=request.destination,
@@ -158,6 +166,8 @@ def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, n
             deadline=time.monotonic() + JOB_BUDGET_S,
         )
 
+    deps.record_usage(outcome.usage)
+    log.info(limits.cost_line(outcome.usage, outcome.searches, outcome.rounds))
     if outcome.status == "ok":
         result = _format_plan(
             free_time, outcome.itinerary, now, len(outcome.known_places), request, deps, "agent",

@@ -30,6 +30,8 @@ export function degradedMessage(reason: string): string {
     case "llm_unavailable":
     case "timeout":
       return "The smart planner isn't available right now, so this is a basic plan.";
+    case "daily_budget":
+      return "Today's smart-planner budget is used up, so this is a basic plan.";
     default:
       return "The smart planner couldn't finish, so this is a basic plan.";
   }

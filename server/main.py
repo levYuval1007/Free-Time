@@ -14,12 +14,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import budget
 import jobs
+import limits
 import ors
 import places
 import planning
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("server")
+logging.getLogger("uvicorn.access").addFilter(limits.RedactQueryFilter())
 
 SESSION_PATTERN = r"^[A-Za-z0-9_-]{1,36}$"
 PLACE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,300}$"
@@ -222,7 +224,7 @@ def _job_view(job: jobs.Job):
 
 
 @app.post("/api/plans", response_model=JobResponse, response_model_exclude_none=True, status_code=202)
-def create_plan_job(body: PlanJobRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+def create_plan_job(request: Request, body: PlanJobRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     """Start a planning run (the agent, with the rule-based planner as fallback) and poll GET /api/plans/{job_id}."""
     if idempotency_key is not None and not re.fullmatch(IDEMPOTENCY_PATTERN, idempotency_key):
         raise HTTPException(400, "Idempotency-Key must be 8 to 64 letters, digits, dashes or underscores")
@@ -231,6 +233,13 @@ def create_plan_job(body: PlanJobRequest, idempotency_key: str | None = Header(d
     except ValueError:
         raise HTTPException(400, "arrive_by must be an ISO 8601 time with a timezone offset")
     fingerprint = json.dumps(body.model_dump(), sort_keys=True)
+    client_ip = request.client.host if request.client else "unknown"
+    replay = idempotency_key is not None and store.has_key(idempotency_key)
+    if not replay:
+        refused = limits.guard.check_new_plan(client_ip)
+        if refused:
+            message, retry_after = refused
+            return JSONResponse(status_code=429, content={"error": message}, headers={"Retry-After": str(retry_after)})
     try:
         job, created = store.create(fingerprint, idempotency_key)
     except jobs.Busy as err:
@@ -238,7 +247,8 @@ def create_plan_job(body: PlanJobRequest, idempotency_key: str | None = Header(d
     except jobs.KeyConflict as err:
         raise HTTPException(409, str(err))
     if created:
-        request = planning.PlanRequest(
+        limits.guard.count_plan(client_ip)
+        plan_request = planning.PlanRequest(
             origin=(body.from_lon, body.from_lat),
             destination=(body.to_lon, body.to_lat),
             arrive_by=arrive,
@@ -246,7 +256,7 @@ def create_plan_job(body: PlanJobRequest, idempotency_key: str | None = Header(d
             origin_label=body.from_label,
             destination_label=body.to_label,
         )
-        runner.submit(job.id, lambda progress: planning.execute_plan(request, progress))
+        runner.submit(job.id, lambda progress: planning.execute_plan(plan_request, progress))
     return JSONResponse(status_code=202 if created else 200, content=JobResponse(**_job_view(job)).model_dump(exclude_none=True))
 
 

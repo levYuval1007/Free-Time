@@ -149,6 +149,15 @@ class LoopTests(unittest.TestCase):
         # The shared tool definitions are not modified by adding the cache marker.
         self.assertNotIn("cache_control", agent_tools.TOOLS[-1])
 
+    def test_stops_when_the_plan_has_used_its_token_budget(self):
+        claude = FakeClaude(
+            reply(tool_use("t1", "search_places", **SEARCH), input_tokens=70_000),
+            reply(submit("t2")),
+        )
+        outcome = agent.run_agent(claude, make_box(), "trip")
+        self.assertEqual((outcome.status, outcome.reason), ("failed", "token_budget"))
+        self.assertEqual(len(claude.calls), 1)
+
     def test_progress_callback(self):
         seen = []
         claude = FakeClaude(reply(tool_use("t1", "search_places", **SEARCH)), reply(submit("t2")))

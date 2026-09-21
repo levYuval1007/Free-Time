@@ -12,6 +12,7 @@ import anthropic
 
 import agent_tools
 import config
+import limits
 import validator
 
 log = logging.getLogger("agent")
@@ -19,6 +20,7 @@ log = logging.getLogger("agent")
 MODEL = "claude-sonnet-5"
 MAX_ROUNDS = 8
 MAX_TOKENS = 2000
+JOB_TOKEN_BUDGET = 60_000  # input + output + cache tokens for one plan; real runs use about 12k to 19k
 MAX_PREFERENCES_CHARS = 500
 REQUEST_TIMEOUT_S = 45
 
@@ -104,10 +106,11 @@ def _block_to_dict(block):
     return None
 
 
-def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_progress=None, deadline=None) -> AgentOutcome:
+def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_progress=None, deadline=None, token_budget=JOB_TOKEN_BUDGET) -> AgentOutcome:
     """Drive the tool loop until the itinerary is accepted or a limit is hit. Never raises for model or API trouble.
 
-    deadline is a time.monotonic() value after which no new model request is started.
+    deadline is a time.monotonic() value after which no new model request is started, and token_budget caps the
+    tokens one plan may use in total.
     """
     outcome = AgentOutcome(status="failed")
     messages = [{"role": "user", "content": user_message}]
@@ -117,6 +120,9 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
     for round_number in range(1, MAX_ROUNDS + 1):
         if deadline is not None and time.monotonic() > deadline:
             outcome.reason = "timeout"
+            break
+        if token_budget and limits.total_tokens(outcome.usage) >= token_budget:
+            outcome.reason = "token_budget"
             break
         outcome.rounds = round_number
         try:
