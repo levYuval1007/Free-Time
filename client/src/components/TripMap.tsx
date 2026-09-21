@@ -11,9 +11,11 @@ interface Props {
   activeStopId: string | null;
   onSelectStop: (id: string) => void;
   center: Coordinates | null;
+  focus?: Coordinates | null;
+  refitKey?: unknown;
 }
 
-export function TripMap({ from, to, geometry, stops, activeStopId, onSelectStop, center }: Props) {
+export function TripMap({ from, to, geometry, stops, activeStopId, onSelectStop, center, focus, refitKey }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -51,10 +53,14 @@ export function TripMap({ from, to, geometry, stops, activeStopId, onSelectStop,
       if (to) points.push([to.lat, to.lon]);
     }
     instance.invalidateSize();
+    if (focus) {
+      instance.setView([focus.lat, focus.lon], 15, { animate: false });
+      return;
+    }
     if (points.length > 1) instance.fitBounds(L.latLngBounds(points), { padding: [40, 40], animate: false });
     else if (points.length === 1) instance.setView(points[0], 14, { animate: false });
     else if (center) instance.setView([center.lat, center.lon], 12, { animate: false });
-  }, [from, to, geometry, center]);
+  }, [from, to, geometry, center, focus?.lat, focus?.lon, refitKey]);
 
   useEffect(() => {
     const group = layer.current;

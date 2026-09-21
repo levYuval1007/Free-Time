@@ -4,8 +4,11 @@ import { ArrivalTimePicker } from "./components/ArrivalTimePicker";
 import { PlaceField } from "./components/PlaceField";
 import { ResultPanel } from "./components/ResultPanel";
 import { TripMap } from "./components/TripMap";
+import { TripSheet } from "./components/TripSheet";
+import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useUserLocation } from "./hooks/useUserLocation";
-import { parseArriveBy } from "./lib/format";
+import { focusPointFor } from "./lib/carousel";
+import { clockTime, parseArriveBy, shortLabel } from "./lib/format";
 import type { PlanResult, SelectedPlace, TripResult } from "./types";
 
 export default function App() {
@@ -16,13 +19,16 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TripResult | null>(null);
-  const [activeStop, setActiveStop] = useState<string | null>(null);
+  // 0 is the overview card, 1..n the stops, and the last card the destination.
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const isPhone = useMediaQuery("(max-width: 800px)");
 
   function changePlace(set: (place: SelectedPlace | null) => void) {
     return (place: SelectedPlace | null) => {
       set(place);
       setResult(null);
-      setActiveStop(null);
+      setFocusIndex(0);
       if (place) setError(null);
     };
   }
@@ -31,7 +37,8 @@ export default function App() {
     if (!from || !to) return;
     setError(null);
     setResult(null);
-    setActiveStop(null);
+    setFocusIndex(0);
+    setEditing(false);
     const arrival = parseArriveBy(arrive);
     if (arrival.kind === "error") {
       setError(arrival.message);
@@ -58,9 +65,18 @@ export default function App() {
 
   const stops = result?.plan?.stops ?? [];
   const geometry = stops.length > 0 ? result?.plan?.geometry : result?.route.geometry;
+  const activeStopId = focusIndex >= 1 && focusIndex <= stops.length ? stops[focusIndex - 1].id : null;
+  // On a phone the result replaces the form: a compact bar, the map, and a swipeable sheet.
+  const tripMode = isPhone && result != null && !editing;
+  const focus = tripMode && result ? focusPointFor(focusIndex, stops, result.to) : null;
+
+  function selectStop(id: string) {
+    const index = stops.findIndex((stop) => stop.id === id);
+    if (index >= 0) setFocusIndex(index + 1);
+  }
 
   return (
-    <div className="app">
+    <div className={`app${tripMode ? " trip" : ""}`}>
       <header className="banner">
         <div className="brand">
           <img className="logo" src="/logo.svg" alt="" width={40} height={40} />
@@ -78,15 +94,32 @@ export default function App() {
         </div>
       </header>
 
+      {tripMode && result && (
+        <div className="trip-bar">
+          <img className="logo" src="/logo.svg" alt="" width={32} height={32} />
+          <div className="trip-bar-text">
+            <div className="trip-route" dir="auto">
+              {shortLabel(result.from.label)} → {shortLabel(result.to.label)}
+            </div>
+            {result.arriveBy && <div className="trip-sub">Arrive by {clockTime(result.arriveBy)}</div>}
+          </div>
+          <button type="button" className="trip-edit" onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        </div>
+      )}
+
       <div className="map-area">
         <TripMap
           from={from}
           to={to}
           geometry={geometry}
           stops={stops}
-          activeStopId={activeStop}
-          onSelectStop={setActiveStop}
+          activeStopId={activeStopId}
+          onSelectStop={selectStop}
           center={location}
+          focus={focus}
+          refitKey={tripMode}
         />
       </div>
 
@@ -118,8 +151,16 @@ export default function App() {
           {loading ? "Planning your trip..." : "Plan my trip"}
         </button>
 
-        {result && <ResultPanel result={result} activeStopId={activeStop} onSelectStop={setActiveStop} />}
+        {isPhone && editing && result && (
+          <button type="button" className="link-button" onClick={() => setEditing(false)}>
+            Back to your trip
+          </button>
+        )}
+
+        {result && !isPhone && <ResultPanel result={result} activeStopId={activeStopId} onSelectStop={selectStop} />}
       </main>
+
+      {tripMode && result && <TripSheet result={result} index={focusIndex} onIndexChange={setFocusIndex} />}
     </div>
   );
 }

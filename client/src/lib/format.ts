@@ -44,3 +44,14 @@ export function newSessionId(): string {
     ? crypto.randomUUID()
     : Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
+
+export function shortTime(iso: string): string {
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// "Dizengoff St 50, Tel Aviv, Israel" -> "Dizengoff St 50"
+export function shortLabel(label: string): string {
+  return label.split(",")[0].trim() || label;
+}

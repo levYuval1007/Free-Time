@@ -1,8 +1,7 @@
-import { useEffect, useRef } from "react";
-import { budgetMessage, planReasonMessage } from "../lib/budgetText";
 import { clockTime } from "../lib/format";
 import { googleMapsUrl } from "../lib/maps";
 import type { TripResult } from "../types";
+import { Metric, Notices } from "./Notices";
 import { Steps } from "./Steps";
 import { Timeline } from "./Timeline";
 
@@ -12,33 +11,15 @@ interface Props {
   onSelectStop: (id: string) => void;
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
-    </div>
-  );
-}
-
 export function ResultPanel({ result, activeStopId, onSelectStop }: Props) {
-  const { from, to, route, plan, planError, arriveBy } = result;
-  const container = useRef<HTMLDivElement>(null);
-
-  // On a phone the result starts below the form, so bring it into view.
-  useEffect(() => {
-    if (window.matchMedia("(max-width: 800px)").matches) {
-      container.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [result]);
+  const { from, to, route, plan, arriveBy } = result;
   const stops = plan?.stops ?? [];
   const hasPlan = plan != null && stops.length > 0 && arriveBy != null;
   const budget = plan?.budget ?? route.budget;
-  const showReason = plan?.reason != null && budget?.status === "ok";
   const steps = hasPlan ? (plan.steps ?? route.steps) : route.steps;
 
   return (
-    <div className="result" ref={container}>
+    <div className="result">
       {hasPlan ? (
         <div className="metrics">
           <Metric label="Leave" value={plan.depart ? clockTime(plan.depart) : "Now"} />
@@ -53,11 +34,7 @@ export function ResultPanel({ result, activeStopId, onSelectStop }: Props) {
         </div>
       )}
 
-      {!hasPlan && budget && budget.status !== "ok" && (
-        <div className={`notice ${budget.status}`}>{budgetMessage(budget)}</div>
-      )}
-      {!hasPlan && showReason && plan?.reason && <div className="notice go_direct">{planReasonMessage(plan.reason)}</div>}
-      {planError && <div className="notice go_direct">Couldn't look for places to visit right now. {planError}</div>}
+      <Notices result={result} hasPlan={hasPlan} />
 
       {hasPlan && (
         <Timeline

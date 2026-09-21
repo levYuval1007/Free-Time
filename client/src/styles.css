@@ -51,7 +51,26 @@ body {
 
 @media (max-width: 800px) {
   .app { display: block; height: auto; }
-    .map-area { position: sticky; top: 0; height: 40vh; z-index: 1; }
+  .banner { padding-bottom: 4.4rem; }
+  .banner-route { bottom: 1.5rem; }
+  .map-area {
+    position: sticky;
+    top: 0;
+    height: 40vh;
+    z-index: 1;
+    margin-top: -16px;
+    border-radius: 16px 16px 0 0;
+    overflow: hidden;
+  }
+  .map-area::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 36px;
+    z-index: 800;
+    pointer-events: none;
+    background: linear-gradient(rgba(74, 89, 196, 0.35), rgba(74, 89, 196, 0));
+  }
   .panel {
     position: relative;
     z-index: 2;
@@ -258,3 +277,86 @@ a.place-meta { color: var(--accent); }
   justify-content: center;
 }
 .pin.active { background: #1f2a8a; transform: scale(1.25); }
+
+/* Phone trip view: compact bar, big map, swipeable cards */
+.trip-bar { display: none; }
+.trip-sheet {
+  position: relative;
+  z-index: 2;
+  margin-top: -16px;
+  padding-top: 0.9rem;
+  max-height: 55vh;
+  max-height: 55dvh;
+  overflow-y: auto;
+  background: white;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.12);
+}
+.sheet-body { padding: 0.75rem 6% 0.9rem; }
+.sheet-body .metrics { margin-bottom: 0.75rem; }
+.carousel {
+  position: relative;
+  display: flex;
+  gap: 0.6rem;
+  padding: 0 6%;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.carousel::-webkit-scrollbar { display: none; }
+.card {
+  flex: 0 0 88%;
+  scroll-snap-align: center;
+  min-height: 7.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--accent-soft);
+  border-radius: 12px;
+}
+.card-kicker { font-size: 0.78rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.03em; }
+.card-title { font-size: 1.1rem; font-weight: 700; }
+.card-sub { font-size: 0.95rem; }
+.card-meta { font-size: 0.85rem; color: var(--muted); }
+.card-hint { margin-top: auto; font-size: 0.85rem; color: var(--muted); }
+.card-ok { font-size: 0.9rem; color: #1e6b34; }
+.card-link { font-size: 0.85rem; color: var(--accent); }
+.carousel-nav { display: flex; gap: 0.25rem; padding: 0.55rem 6% 0; }
+button.nav-item {
+  flex: 1 1 0;
+  width: auto;
+  padding: 0.2rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.nav-dot { width: 8px; height: 8px; border-radius: 50%; background: #c8cbe0; transition: transform 0.15s; }
+button.nav-item.active { color: var(--accent); }
+button.nav-item.active .nav-dot { background: var(--accent); transform: scale(1.4); }
+.link-button { margin-top: 0.75rem; background: transparent; color: var(--accent); }
+
+@media (max-width: 800px) {
+  .app.trip { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .app.trip .banner,
+  .app.trip .panel { display: none; }
+  .app.trip .trip-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.9rem 1.4rem;
+    color: white;
+    background: linear-gradient(135deg, #7b88ec, #4a59c4);
+  }
+  .app.trip .map-area { position: relative; flex: 1 1 0; height: auto; min-height: 0; }
+  .app.trip .trip-sheet { flex: none; }
+  .trip-bar .logo { width: 32px; height: 32px; }
+  .trip-bar-text { flex: 1; min-width: 0; }
+  .trip-route { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trip-sub { font-size: 0.8rem; opacity: 0.85; }
+  button.trip-edit { width: auto; padding: 0.4rem 0.9rem; background: rgba(255, 255, 255, 0.2); color: white; }
+}
