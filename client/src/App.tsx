@@ -61,6 +61,23 @@ export default function App() {
 
   return (
     <div className="app">
+      <header className="banner">
+        <div className="brand">
+          <img className="logo" src="/logo.svg" alt="" width={40} height={40} />
+          <div>
+            <h1>Leeway</h1>
+            <p className="tagline">Make the most of the time before you have to be there.</p>
+          </div>
+        </div>
+        <div className="banner-route" aria-hidden="true">
+          <svg viewBox="0 0 100 32" preserveAspectRatio="none">
+            <path d="M100 5 C 92 -3, 88 17, 80 12 S 66 -3, 58 12 S 44 27, 36 15 S 22 31, 14 22 S 6 27, 0 27" />
+          </svg>
+          <span className="route-end" />
+          <span className="route-start" />
+        </div>
+      </header>
+
       <div className="map-area">
         <TripMap
           from={from}
@@ -74,16 +91,6 @@ export default function App() {
       </div>
 
       <main className="panel">
-        <header>
-          <div className="brand">
-            <img className="logo" src="/logo.svg" alt="" width={40} height={40} />
-            <div>
-              <h1>Leeway</h1>
-              <p className="tagline">Make the most of the time before you have to be there.</p>
-            </div>
-          </div>
-        </header>
-
         {error && (
           <div className="error" role="alert">
             {error}

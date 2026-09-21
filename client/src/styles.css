@@ -15,14 +15,43 @@ body {
   color: var(--text);
 }
 
-.app { display: grid; grid-template-columns: 430px minmax(0, 1fr); height: 100vh; height: 100dvh; }
-.panel { grid-column: 1; grid-row: 1; overflow-y: auto; background: white; padding: 1.25rem; }
-.map-area { grid-column: 2; grid-row: 1; position: relative; isolation: isolate; }
+.app {
+  display: grid;
+  grid-template-columns: 430px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+}
+.banner {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  padding: 1rem 1.25rem 3.4rem;
+  color: white;
+  background: linear-gradient(135deg, #7b88ec, #4a59c4);
+}
+.banner .tagline { color: rgba(255, 255, 255, 0.85); }
+.banner-route { position: absolute; left: 0.9rem; right: 0.9rem; bottom: 0.5rem; height: 32px; }
+.banner-route svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.banner-route path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 3;
+  stroke-dasharray: 7 6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.route-start,
+.route-end { position: absolute; width: 13px; height: 13px; border-radius: 50%; transform: translate(-50%, -50%); }
+.route-start { left: 0; top: 84%; background: white; }
+.route-end { left: 100%; top: 16%; background: #ffd166; border: 2px solid white; }
+.panel { grid-column: 1; grid-row: 2; overflow-y: auto; background: white; padding: 1.25rem; }
+.map-area { grid-column: 2; grid-row: 1 / 3; position: relative; isolation: isolate; }
 .map { position: absolute; inset: 0; }
 
 @media (max-width: 800px) {
   .app { display: block; height: auto; }
-  .map-area { position: sticky; top: 0; height: 40vh; z-index: 1; }
+    .map-area { position: sticky; top: 0; height: 40vh; z-index: 1; }
   .panel {
     position: relative;
     z-index: 2;
@@ -34,9 +63,8 @@ body {
   }
 }
 
-header { margin-bottom: 1.25rem; }
 .brand { display: flex; align-items: center; gap: 0.75rem; }
-.logo { flex: none; border-radius: 10px; }
+.logo { flex: none; border-radius: 10px; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); }
 h1 { font-size: 1.5rem; line-height: 1.1; }
 .tagline { color: var(--muted); font-size: 0.95rem; margin-top: 0.15rem; }
 
