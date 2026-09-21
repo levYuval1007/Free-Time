@@ -1,27 +1,32 @@
+import json
 import logging
-import math
-from concurrent.futures import ThreadPoolExecutor
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import budget
+import jobs
 import ors
 import places
-import planner
+import planning
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("server")
 
 SESSION_PATTERN = r"^[A-Za-z0-9_-]{1,36}$"
 PLACE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,300}$"
+IDEMPOTENCY_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
+
+store = jobs.JobStore()
+runner = jobs.JobRunner(store)
 
 app = FastAPI(title="Leeway API")
 
@@ -79,6 +84,7 @@ class PlannedStop(BaseModel):
     arrive: str
     leave: str
     visit_minutes: int
+    why: str | None = None
 
 
 class PlanResponse(BaseModel):
@@ -91,6 +97,28 @@ class PlanResponse(BaseModel):
     geometry: list[list[float]] | None = None
     steps: list[RouteStep] | None = None
     candidates_considered: int = 0
+    source: Literal["agent", "baseline"] | None = None
+    summary: str | None = None
+
+
+class PlanJobRequest(BaseModel):
+    from_lon: float = Field(ge=-180, le=180)
+    from_lat: float = Field(ge=-90, le=90)
+    to_lon: float = Field(ge=-180, le=180)
+    to_lat: float = Field(ge=-90, le=90)
+    arrive_by: str = Field(min_length=1, max_length=64)
+    preferences: str = Field(default="", max_length=500)
+    from_label: str = Field(default="the start", max_length=200)
+    to_label: str = Field(default="the destination", max_length=200)
+
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "succeeded", "degraded", "failed"]
+    stage: str | None = None
+    result: PlanResponse | None = None
+    error: str | None = None
+    degraded_reason: str | None = None
 
 
 @app.exception_handler(RequestValidationError)
@@ -172,59 +200,62 @@ def plan(
         arrive = budget.parse_arrive_by(arrive_by)
     except ValueError:
         raise HTTPException(400, "arrive_by must be an ISO 8601 time with a timezone offset")
+    request = planning.PlanRequest(origin=(from_lon, from_lat), destination=(to_lon, to_lat), arrive_by=arrive, radius=radius)
+    deps = planning.Deps()
     now = datetime.now(timezone.utc)
-    origin = (from_lon, from_lat)
-    destination = (to_lon, to_lat)
-
-    direct = ors.matrix([origin, destination])[0][1]
-    if direct is None:
-        raise HTTPException(400, "There is no driving route between these places")
-    free_time = budget.plan_budget(arrive, now, math.ceil(direct))
+    _, free_time = planning.compute_free_time(request, now, deps)
     if free_time["status"] != "ok":
         reason = "impossible" if free_time["status"] == "impossible" else "not_enough_time"
         return {"budget": free_time, "stops": [], "reason": reason}
+    return planning.baseline_plan(request, free_time, now, deps)
 
-    def search(center):
-        try:
-            return places.search_nearby(center[1], center[0], radius)
-        except places.PlacesError as err:
-            log.warning("Nearby search failed: %s", err)
-            return None
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        found = list(pool.map(search, [origin, destination]))
-    if all(result is None for result in found):
-        raise places.PlacesError("Could not search for places right now", transient=True)
-    candidates = planner.select_candidates([p for result in found if result for p in result])
-    if not candidates:
-        return {"budget": free_time, "stops": [], "reason": "no_candidates"}
-
-    grid = ors.matrix([origin, destination, *[(c["lon"], c["lat"]) for c in candidates]])
-    chosen = planner.plan_stops(candidates, grid, now, arrive, free_time["buffer_minutes"])
-    if chosen is None:
-        return {"budget": free_time, "stops": [], "reason": "no_feasible_plan", "candidates_considered": len(candidates)}
-
-    stops = [
-        {
-            **{key: stop["place"].get(key) for key in ("id", "name", "lat", "lon", "primary_type", "rating", "rating_count", "maps_uri", "weekday_text")},
-            "drive_minutes": round(stop["drive_minutes"], 1),
-            "arrive": stop["arrive"].isoformat(),
-            "leave": stop["leave"].isoformat(),
-            "visit_minutes": stop["visit_minutes"],
-        }
-        for stop in chosen["stops"]
-    ]
-    route = ors.route_through([origin, *[(s["lon"], s["lat"]) for s in stops], destination])
+def _job_view(job: jobs.Job):
     return {
-        "budget": free_time,
-        "stops": stops,
-        "depart": now.isoformat(),
-        "arrive_destination": chosen["arrive_destination"].isoformat(),
-        "final_drive_minutes": round(chosen["final_drive_minutes"], 1),
-        "geometry": route["geometry"],
-        "steps": route["steps"],
-        "candidates_considered": len(candidates),
+        "job_id": job.id,
+        "status": job.status,
+        "stage": job.stage,
+        "result": job.result,
+        "error": job.error,
+        "degraded_reason": job.degraded_reason,
     }
+
+
+@app.post("/api/plans", response_model=JobResponse, response_model_exclude_none=True, status_code=202)
+def create_plan_job(body: PlanJobRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    """Start a planning run (the agent, with the rule-based planner as fallback) and poll GET /api/plans/{job_id}."""
+    if idempotency_key is not None and not re.fullmatch(IDEMPOTENCY_PATTERN, idempotency_key):
+        raise HTTPException(400, "Idempotency-Key must be 8 to 64 letters, digits, dashes or underscores")
+    try:
+        arrive = budget.parse_arrive_by(body.arrive_by)
+    except ValueError:
+        raise HTTPException(400, "arrive_by must be an ISO 8601 time with a timezone offset")
+    fingerprint = json.dumps(body.model_dump(), sort_keys=True)
+    try:
+        job, created = store.create(fingerprint, idempotency_key)
+    except jobs.Busy as err:
+        return JSONResponse(status_code=503, content={"error": str(err)}, headers={"Retry-After": "10"})
+    except jobs.KeyConflict as err:
+        raise HTTPException(409, str(err))
+    if created:
+        request = planning.PlanRequest(
+            origin=(body.from_lon, body.from_lat),
+            destination=(body.to_lon, body.to_lat),
+            arrive_by=arrive,
+            preferences=body.preferences,
+            origin_label=body.from_label,
+            destination_label=body.to_label,
+        )
+        runner.submit(job.id, lambda progress: planning.execute_plan(request, progress))
+    return JSONResponse(status_code=202 if created else 200, content=JobResponse(**_job_view(job)).model_dump(exclude_none=True))
+
+
+@app.get("/api/plans/{job_id}", response_model=JobResponse, response_model_exclude_none=True)
+def get_plan_job(job_id: str):
+    job = store.get(job_id)
+    if job is None:
+        raise HTTPException(404, "This plan is no longer available. Please plan again.")
+    return _job_view(job)
 
 
 CLIENT_DIST = Path(__file__).resolve().parent.parent / "client" / "dist"

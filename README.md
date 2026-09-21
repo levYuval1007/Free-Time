@@ -13,6 +13,7 @@ server/   FastAPI backend (Python)      client/   React + TypeScript UI (Vite)
 | Variable | Used for |
 |---|---|
 | `GOOGLE_MAPS_API_KEY` | Google Places (autocomplete, place details, nearby search) |
+| `ANTHROPIC_API_KEY` | The planning agent (Claude) |
 | `ORS_API_KEY` | OpenRouteService routing (free key from openrouteservice.org) |
 
 Put them in `server/.env` (copy `server/.env.example`; the file is git-ignored), or set environment variables. Environment variables take priority over `.env`. In PowerShell, for the current window only:
