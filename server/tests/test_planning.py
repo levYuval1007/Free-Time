@@ -17,6 +17,7 @@ def deps(claude=None, found=None, enabled=True, minutes=10, search=None, guard=N
     return planning.Deps(
         search_nearby=search,
         travel_matrix=uniform_matrix(minutes),
+        direct_route=lambda *coordinates: {"minutes": minutes},
         route_through=lambda points: {"geometry": [[p[0], p[1]] for p in points], "steps": []},
         make_client=lambda: claude,
         agent_enabled=lambda: enabled,

@@ -1,14 +1,24 @@
 import json
+import logging
+import threading
+import time
 import urllib.parse
 
 import config
 from http_client import PooledClient, TransportError
 
 API_HOST = "api.openrouteservice.org"
+ROUTE_CACHE_TTL_S = 120
+
+log = logging.getLogger("ors")
 
 
 class RouteError(Exception):
     pass
+
+
+class QuotaExceeded(RouteError):
+    """The free OpenRouteService quota (or rate limit) is used up."""
 
 
 def _key():
@@ -27,7 +37,11 @@ def _call(method, path, body=None, headers=None):
     except TransportError as err:
         raise RouteError(f"Could not reach OpenRouteService: {err}")
     if status != 200:
-        raise RouteError(f"OpenRouteService error {status}: {raw.decode(errors='replace')}")
+        detail = raw.decode(errors="replace")
+        log.warning("OpenRouteService %s %s -> %s %s", method, path.split("?")[0], status, detail[:200])
+        if status == 429 or (status == 403 and "quota" in detail.lower()):
+            raise QuotaExceeded("The routing service has reached its usage limit. Please try again later.")
+        raise RouteError(f"The routing service returned an error ({status}).")
     return json.loads(raw)
 
 
@@ -69,8 +83,29 @@ def matrix(points):
     return [[None if seconds is None else seconds / 60 for seconds in row] for row in data["durations"]]
 
 
+_route_cache = {}  # key -> (expires, result)
+_route_locks = {}
+_route_guard = threading.Lock()
+
+
 def route_coords(start_lon, start_lat, end_lon, end_lat):
-    return route_through([(start_lon, start_lat), (end_lon, end_lat)])
+    """The direct route. Answers are kept for a couple of minutes and identical requests that arrive together
+    share one call, because the page and the planning job both ask for the same route."""
+    key = tuple(round(value, 5) for value in (start_lon, start_lat, end_lon, end_lat))
+    with _route_guard:
+        lock = _route_locks.setdefault(key, threading.Lock())
+    with lock:
+        hit = _route_cache.get(key)
+        if hit and hit[0] > time.monotonic():
+            return dict(hit[1])
+        result = route_through([(start_lon, start_lat), (end_lon, end_lat)])
+        now = time.monotonic()
+        with _route_guard:
+            _route_cache[key] = (now + ROUTE_CACHE_TTL_S, result)
+            for old_key in [k for k, (expires, _) in _route_cache.items() if expires <= now]:
+                del _route_cache[old_key]
+                _route_locks.pop(old_key, None)
+    return dict(result)
 
 
 def route_through(points):

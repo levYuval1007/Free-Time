@@ -8,12 +8,13 @@ import json
 import math
 from datetime import timedelta
 
+import ors
 import planner
 import places
 import validator
 
 MAX_SEARCHES = 3
-MAX_TRAVEL_CALLS = 6
+MAX_TRAVEL_CALLS = 4
 MAX_SUBMISSIONS = 3
 MAX_RESULTS = 20
 MIN_RADIUS_M = 300
@@ -142,6 +143,8 @@ class ToolBox:
             return handler(arguments)
         except places.PlacesError as err:
             return f"The places service failed: {err}", True
+        except ors.RouteError as err:
+            return f"The routing service failed: {err}", True
 
     def _search_places(self, args):
         lat, lon, radius = args.get("lat"), args.get("lon"), args.get("radius_m")
@@ -166,6 +169,9 @@ class ToolBox:
         found = found[:MAX_RESULTS]
         for place in found:
             self.ctx.known_places[place["id"]] = place
+        register = getattr(self._travel_matrix, "register", None)
+        if register:
+            register([(place["lon"], place["lat"]) for place in found])
         return json.dumps([self._describe(place) for place in found]), False
 
     def _describe(self, place):

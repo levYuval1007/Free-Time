@@ -16,6 +16,7 @@ import limits
 import ors
 import places
 import planner
+import travel
 import validator
 
 log = logging.getLogger("planning")
@@ -43,6 +44,7 @@ class PlanRequest:
 class Deps:
     search_nearby: Callable = places.search_nearby
     travel_matrix: Callable = ors.matrix
+    direct_route: Callable = ors.route_coords
     route_through: Callable = ors.route_through
     make_client: Callable = agent.make_client
     agent_enabled: Callable = lambda: bool(config.get("ANTHROPIC_API_KEY"))
@@ -121,10 +123,9 @@ def baseline_plan(request: PlanRequest, free_time, now, deps: Deps, known_places
 
 
 def compute_free_time(request: PlanRequest, now, deps: Deps):
-    direct = deps.travel_matrix([request.origin, request.destination])[0][1]
-    if direct is None:
-        raise ors.RouteError("There is no driving route between these places")
-    direct_minutes = math.ceil(direct)
+    # The page asks for this same route, and the answers are shared, so this costs no extra routing call.
+    direct = deps.direct_route(request.origin[0], request.origin[1], request.destination[0], request.destination[1])
+    direct_minutes = math.ceil(direct["minutes"])
     return direct_minutes, budget.plan_budget(request.arrive_by, now, direct_minutes)
 
 
@@ -149,7 +150,9 @@ def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, n
         now=now, arrive_by=request.arrive_by, buffer_minutes=free_time["buffer_minutes"],
         origin=request.origin, destination=request.destination,
     )
-    box = agent_tools.ToolBox(ctx, deps.search_nearby, deps.travel_matrix)
+    times = travel.TravelTimes(deps.travel_matrix)
+    times.register([request.origin, request.destination])
+    box = agent_tools.ToolBox(ctx, deps.search_nearby, times)
     message = agent.build_user_message(
         ctx, free_time, direct_minutes, request.preferences, request.origin_label, request.destination_label
     )
