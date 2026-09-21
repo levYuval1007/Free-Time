@@ -38,6 +38,7 @@ export function Timeline({ plan, from, to, arriveBy, activeStopId, onSelectStop 
               <span className="stop-time">
                 {clockTime(stop.arrive)} - {clockTime(stop.leave)} ({stop.visit_minutes} min)
               </span>
+              {stop.why && <span className="stop-why">{stop.why}</span>}
               <span className="place-meta">
                 {stop.primary_type?.replace(/_/g, " ") ?? "place"} -{" "}
                 {stop.rating == null ? "no rating" : `${stop.rating} (${stop.rating_count})`} -{" "}

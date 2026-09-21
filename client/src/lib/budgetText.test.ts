@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Budget } from "../types";
-import { budgetMessage, planReasonMessage } from "./budgetText";
+import { budgetMessage, degradedMessage, planReasonMessage } from "./budgetText";
 
 const budget = (overrides: Partial<Budget>): Budget => ({
   status: "ok",
@@ -41,5 +41,12 @@ describe("planReasonMessage", () => {
 
   it("suggests heading straight there when there is no free time", () => {
     expect(planReasonMessage("not_enough_time")).toContain("head straight there");
+  });
+});
+
+describe("degradedMessage", () => {
+  it("explains that a basic plan is shown", () => {
+    expect(degradedMessage("llm_unavailable")).toContain("basic plan");
+    expect(degradedMessage("refused")).toContain("basic plan");
   });
 });

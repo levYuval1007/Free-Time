@@ -360,3 +360,17 @@ button.nav-item.active .nav-dot { background: var(--accent); transform: scale(1.
   .trip-sub { font-size: 0.8rem; opacity: 0.85; }
   button.trip-edit { width: auto; padding: 0.4rem 0.9rem; background: rgba(255, 255, 255, 0.2); color: white; }
 }
+
+/* Agent output */
+.card-summary,
+.card-why {
+  font-size: 0.88rem;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-why { font-style: italic; -webkit-line-clamp: 2; }
+.plan-summary { margin-bottom: 0.9rem; color: #444758; }
+.stop-why { font-size: 0.9rem; font-style: italic; color: var(--text); }

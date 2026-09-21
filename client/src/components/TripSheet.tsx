@@ -67,6 +67,7 @@ function Cards({ result, plan, arriveBy, index, onIndexChange }: CardsProps) {
             {stops.length} {stops.length === 1 ? "stop" : "stops"}
             {spare != null && spare >= 0 ? ` - ${spare} min to spare` : ""}
           </div>
+          {plan.summary && <div className="card-summary">{plan.summary}</div>}
           <div className="card-hint">Swipe to see each stop</div>
         </article>
 
@@ -81,6 +82,7 @@ function Cards({ result, plan, arriveBy, index, onIndexChange }: CardsProps) {
             <div className="card-sub">
               {clockTime(stop.arrive)} - {clockTime(stop.leave)} ({stop.visit_minutes} min)
             </div>
+            {stop.why && <div className="card-why">{stop.why}</div>}
             <div className="card-meta">
               {stop.primary_type?.replace(/_/g, " ") ?? "place"} -{" "}
               {stop.rating == null ? "no rating" : `${stop.rating} (${stop.rating_count})`} -{" "}
@@ -140,11 +142,11 @@ export function TripSheet({ result, index, onIndexChange }: Props) {
             <Metric label="Distance" value={`${route.km} km`} />
             {budget && <Metric label="Free time" value={`${budget.free_minutes} min`} />}
           </div>
-          <Notices result={result} hasPlan={false} />
         </div>
       )}
 
       <div className="sheet-body">
+        <Notices result={result} hasPlan={hasPlan} />
         <a className="button-link" href={googleMapsUrl(from, to, stops)} target="_blank" rel="noopener noreferrer">
           Open in Google Maps
         </a>

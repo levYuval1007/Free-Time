@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, errorMessage } from "./api";
 import { ArrivalTimePicker } from "./components/ArrivalTimePicker";
 import { PlaceField } from "./components/PlaceField";
@@ -8,7 +8,8 @@ import { TripSheet } from "./components/TripSheet";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useUserLocation } from "./hooks/useUserLocation";
 import { focusPointFor } from "./lib/carousel";
-import { clockTime, parseArriveBy, shortLabel } from "./lib/format";
+import { clockTime, newSessionId, parseArriveBy, shortLabel } from "./lib/format";
+import { pollJob } from "./lib/polling";
 import type { PlanResult, SelectedPlace, TripResult } from "./types";
 
 export default function App() {
@@ -16,6 +17,10 @@ export default function App() {
   const [from, setFrom] = useState<SelectedPlace | null>(null);
   const [to, setTo] = useState<SelectedPlace | null>(null);
   const [arrive, setArrive] = useState("");
+  const [preferences, setPreferences] = useState("");
+  const [stage, setStage] = useState<string | null>(null);
+  // Bumped whenever a run is replaced or abandoned, so a late answer from an old run is ignored.
+  const currentRun = useRef(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TripResult | null>(null);
@@ -27,10 +32,36 @@ export default function App() {
   function changePlace(set: (place: SelectedPlace | null) => void) {
     return (place: SelectedPlace | null) => {
       set(place);
+      currentRun.current += 1;
+      setLoading(false);
+      setStage(null);
       setResult(null);
       setFocusIndex(0);
       if (place) setError(null);
     };
+  }
+
+  async function runPlan(
+    origin: SelectedPlace,
+    destination: SelectedPlace,
+    arriveBy: string,
+    run: number,
+  ): Promise<{ plan?: PlanResult; planError?: string; degradedReason?: string }> {
+    const isCurrent = () => run === currentRun.current;
+    try {
+      const started = await api.startPlan(origin, destination, arriveBy, preferences, newSessionId());
+      const job = await pollJob(() => api.getPlan(started.job_id), {
+        onStage: (text) => isCurrent() && setStage(text ?? null),
+        isCancelled: () => !isCurrent(),
+      });
+      if (job.status === "failed") return { planError: job.error ?? "Planning failed." };
+      return {
+        plan: job.result,
+        degradedReason: job.status === "degraded" ? (job.degraded_reason ?? "unknown") : undefined,
+      };
+    } catch (err) {
+      return { planError: errorMessage(err) };
+    }
   }
 
   async function planTrip() {
@@ -45,21 +76,22 @@ export default function App() {
       return;
     }
     const arriveBy = arrival.kind === "ok" ? arrival.iso : undefined;
+    const run = ++currentRun.current;
     setLoading(true);
+    setStage(null);
     try {
-      // The plan endpoint only pays for a places search when there is free time, so both can run together.
-      const planning: Promise<{ plan?: PlanResult; planError?: string }> = arriveBy
-        ? api
-            .plan(from, to, arriveBy)
-            .then((plan) => ({ plan }))
-            .catch((err) => ({ planError: errorMessage(err) }))
-        : Promise.resolve({});
+      // The route is quick; the plan is a job that takes longer and is polled until it finishes.
+      const planning = arriveBy ? runPlan(from, to, arriveBy, run) : Promise.resolve({});
       const [route, planned] = await Promise.all([api.route(from, to, arriveBy), planning]);
+      if (run !== currentRun.current) return;
       setResult({ from, to, arriveBy, route, ...planned });
     } catch (err) {
-      setError(errorMessage(err));
+      if (run === currentRun.current) setError(errorMessage(err));
     } finally {
-      setLoading(false);
+      if (run === currentRun.current) {
+        setLoading(false);
+        setStage(null);
+      }
     }
   }
 
@@ -147,8 +179,20 @@ export default function App() {
         />
         <ArrivalTimePicker value={arrive} onChange={setArrive} />
 
+        <div className="form-group">
+          <label htmlFor="preferences">What are you in the mood for? (optional)</label>
+          <input
+            id="preferences"
+            type="text"
+            value={preferences}
+            maxLength={500}
+            placeholder="Quiet places, coffee first, good with kids..."
+            onChange={(e) => setPreferences(e.target.value)}
+          />
+        </div>
+
         <button className="primary" disabled={!from || !to || loading} onClick={() => void planTrip()}>
-          {loading ? "Planning your trip..." : "Plan my trip"}
+          {loading ? `${stage ?? "Planning your trip"}...` : "Plan my trip"}
         </button>
 
         {isPhone && editing && result && (

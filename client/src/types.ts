@@ -64,6 +64,7 @@ export interface PlannedStop {
   arrive: string;
   leave: string;
   visit_minutes: number;
+  why?: string;
 }
 
 export type PlanReason = "impossible" | "not_enough_time" | "no_candidates" | "no_feasible_plan";
@@ -78,6 +79,8 @@ export interface PlanResult {
   geometry?: [number, number][];
   steps?: RouteStep[];
   candidates_considered: number;
+  source?: "agent" | "baseline";
+  summary?: string;
 }
 
 export interface TripResult {
@@ -87,4 +90,17 @@ export interface TripResult {
   route: RouteResult;
   plan?: PlanResult;
   planError?: string;
+  // Set when the AI planner could not finish and the basic planner was used instead.
+  degradedReason?: string;
+}
+
+export type JobStatus = "queued" | "running" | "succeeded" | "degraded" | "failed";
+
+export interface PlanJob {
+  job_id: string;
+  status: JobStatus;
+  stage?: string;
+  result?: PlanResult;
+  error?: string;
+  degraded_reason?: string;
 }

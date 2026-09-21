@@ -36,6 +36,8 @@ export function ResultPanel({ result, activeStopId, onSelectStop }: Props) {
 
       <Notices result={result} hasPlan={hasPlan} />
 
+      {hasPlan && plan.summary && <p className="plan-summary">{plan.summary}</p>}
+
       {hasPlan && (
         <Timeline
           plan={plan}

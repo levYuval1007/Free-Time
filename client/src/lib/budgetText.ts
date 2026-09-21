@@ -24,3 +24,13 @@ export function planReasonMessage(reason: PlanReason): string {
       return "Nothing fits in your free time. The places nearby may be closed at those hours.";
   }
 }
+
+export function degradedMessage(reason: string): string {
+  switch (reason) {
+    case "llm_unavailable":
+    case "timeout":
+      return "The smart planner isn't available right now, so this is a basic plan.";
+    default:
+      return "The smart planner couldn't finish, so this is a basic plan.";
+  }
+}

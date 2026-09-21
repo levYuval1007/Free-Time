@@ -1,4 +1,4 @@
-import { budgetMessage, planReasonMessage } from "../lib/budgetText";
+import { budgetMessage, degradedMessage, planReasonMessage } from "../lib/budgetText";
 import type { TripResult } from "../types";
 
 export function Metric({ label, value }: { label: string; value: string }) {
@@ -11,11 +11,12 @@ export function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function Notices({ result, hasPlan }: { result: TripResult; hasPlan: boolean }) {
-  const { route, plan, planError } = result;
+  const { route, plan, planError, degradedReason } = result;
   const budget = plan?.budget ?? route.budget;
   const showReason = plan?.reason != null && budget?.status === "ok";
   return (
     <>
+      {degradedReason && <div className="notice go_direct">{degradedMessage(degradedReason)}</div>}
       {!hasPlan && budget && budget.status !== "ok" && (
         <div className={`notice ${budget.status}`}>{budgetMessage(budget)}</div>
       )}
