@@ -22,6 +22,17 @@ Put them in `server/.env` (copy `server/.env.example`; the file is git-ignored),
 $env:GOOGLE_MAPS_API_KEY = "your-key"
 ```
 
+**Optional settings** (environment variables; the defaults are fine to start with):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AGENT_MODEL` | `claude-sonnet-5` | Claude model for the planning agent. If a model is unavailable or rejects a setting, the plan falls back to the basic planner |
+| `AGENT_EFFORT` | the model's default | How hard the model thinks: `low`, `medium`, `high`, `xhigh` or `max`. Not every model accepts it |
+| `PLANS_PER_IP_PER_HOUR` | 8 | Plans one address may start per hour (then 429) |
+| `PLANS_PER_DAY` | 150 | Plans per day for everyone (then 429) |
+| `AGENT_DAILY_TOKENS` | 2,000,000 | Agent tokens per day; after that plans use the basic planner |
+| `ANTHROPIC_PRICE_*_PER_MTOK` | unset | `INPUT`, `OUTPUT`, `CACHE_READ` and `CACHE_WRITE` prices in USD per million tokens, for a cost estimate in the log. Update them when you change the model |
+
 **Server:**
 
 ```powershell

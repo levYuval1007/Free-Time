@@ -5,6 +5,7 @@ validator.validate_itinerary, which is the authority; the model's own numbers ar
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -24,6 +25,7 @@ JOB_TOKEN_BUDGET = 60_000  # input + output + cache tokens for one plan; real ru
 MAX_PREFERENCES_CHARS = 500
 REQUEST_TIMEOUT_S = 45
 EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
+MODEL_ID = re.compile(r"^claude-[a-z0-9][a-z0-9.-]*$")
 
 SYSTEM_PROMPT = """You are the planning engine of Leeway, an app for drivers who have spare time before they must arrive somewhere. \
 Your job is to choose one to three worthwhile stops (parks, museums, viewpoints, cafes and similar) on the way, so the \
@@ -64,6 +66,17 @@ class AgentOutcome:
     usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0})
     searches: int = 0
     known_places: dict = field(default_factory=dict)  # everything the searches found, reusable by a fallback
+
+
+def _model():
+    """The model to use: AGENT_MODEL when it looks like a Claude model id, otherwise the default."""
+    value = (config.get("AGENT_MODEL") or "").strip()
+    if not value:
+        return MODEL
+    if not MODEL_ID.fullmatch(value):
+        log.warning("AGENT_MODEL=%r does not look like a Claude model id; using %s", value, MODEL)
+        return MODEL
+    return value
 
 
 def _effort():
@@ -127,7 +140,7 @@ def _describe_blocks(content):
     return ", ".join(parts) or "none"
 
 
-def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_progress=None, deadline=None, token_budget=JOB_TOKEN_BUDGET) -> AgentOutcome:
+def run_agent(client, box: agent_tools.ToolBox, user_message, model=None, on_progress=None, deadline=None, token_budget=JOB_TOKEN_BUDGET) -> AgentOutcome:
     """Drive the tool loop until the itinerary is accepted or a limit is hit. Never raises for model or API trouble.
 
     deadline is a time.monotonic() value after which no new model request is started, and token_budget caps the
@@ -137,6 +150,7 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
     messages = [{"role": "user", "content": user_message}]
     system = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
     tools = _tools_with_cache_marker()
+    model = model or _model()
     effort = _effort()
     options = {"output_config": {"effort": effort}} if effort else {}
 
@@ -206,7 +220,7 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
     elif outcome.reason is None:
         outcome.reason = "itinerary_rejected"
     log.info(
-        "agent status=%s reason=%s rounds=%d searches=%d effort=%s tokens=%s",
-        outcome.status, outcome.reason, outcome.rounds, outcome.searches, effort or "default", outcome.usage,
+        "agent status=%s reason=%s rounds=%d searches=%d model=%s effort=%s tokens=%s",
+        outcome.status, outcome.reason, outcome.rounds, outcome.searches, model, effort or "default", outcome.usage,
     )
     return outcome
