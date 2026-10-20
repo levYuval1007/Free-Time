@@ -114,10 +114,11 @@ class ValidatorTests(unittest.TestCase):
         self.assertIn("unknown", errors[0])
 
     def test_rejects_arriving_after_the_deadline_less_buffer(self):
-        ctx = context([place("a")], deadline_minutes=70, buffer=15)
-        # 10 + 45 + 10 = 65 minutes is later than the 55 allowed.
-        _, errors = self.check(ctx, [{"place_id": "a"}])
+        tight = context([place("a")], deadline_minutes=50, buffer=15)
+        # 10 + 45 + 10 = 65 minutes is 30 later than the 35 allowed: too much to fix by shortening the visit.
+        _, errors = self.check(tight, [{"place_id": "a"}])
         self.assertIn("after the latest allowed time", errors[0])
+        ctx = context([place("a")], deadline_minutes=70, buffer=15)
         ok, errors = self.check(ctx, [{"place_id": "a", "visit_minutes": 30}])
         self.assertEqual(errors, [])
         self.assertEqual(ok["arrive_destination"], NOW + timedelta(minutes=50))

@@ -40,6 +40,8 @@ left out) and minutes_from_start, so get_travel_time is rarely needed. Prefer a 
 
 Rules:
 - Use only place ids returned by search_places or search_along_route. Never invent places or ids.
+- Small timing slips are fixed for you: a plan up to 15 minutes too late is accepted after the server shortens \
+visits (never below 20 minutes), so do not spend effort on exact arithmetic.
 - Do not calculate arrival times yourself. The server computes the schedule from real driving times and checks opening \
 hours and the deadline. If it rejects your plan, read the problems, fix them and submit again.
 - A stop may add at most about 20 minutes of driving compared with going straight (roughly 10 minutes off the road and 10 back). The server rejects stops that add more.
@@ -135,7 +137,8 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
         started = time.perf_counter()
         try:
             response = client.messages.create(
-                model=model, max_tokens=MAX_TOKENS, system=system, tools=tools, messages=messages
+                model=model, max_tokens=MAX_TOKENS, system=system, tools=tools, messages=messages,
+                cache_control={"type": "ephemeral"},  # the places from earlier rounds are re-read from the cache
             )
         except anthropic.APIError as err:
             log.warning("Claude request failed in round %d: %s", round_number, err)

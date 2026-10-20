@@ -20,7 +20,8 @@ log = logging.getLogger("tools")
 MAX_SEARCHES = 3
 MAX_TRAVEL_CALLS = 4
 MAX_SUBMISSIONS = 3
-MAX_RESULTS = 20
+MAX_RESULTS = 20  # places checked for detour per search
+MAX_SHOWN = 12  # places shown to the model per search, best quality first
 MIN_RADIUS_M = 300
 MAX_RADIUS_M = 5000
 MAX_SEARCH_DISTANCE_KM = 15  # a search centre must be close to the start or the destination
@@ -226,8 +227,16 @@ class ToolBox:
         if register:
             register([(place["lon"], place["lat"]) for place in found])
         timing = self._timing(found)
-        log.info("detour check places=%d shown=%d hidden=%d", len(found), len(timing), len(found) - len(timing))
-        return json.dumps([self._describe(place, timing[place["id"]]) for place in found if place["id"] in timing])
+        passing = [place for place in found if place["id"] in timing]
+        shown = passing[:MAX_SHOWN]
+        log.info(
+            "detour check places=%d shown=%d hidden=%d capped=%d",
+            len(found), len(shown), len(found) - len(passing), len(passing) - len(shown),
+        )
+        # Compact JSON, with the original characters: escaping Hebrew names would cost many more tokens.
+        return json.dumps(
+            [self._describe(place, timing[place["id"]]) for place in shown], ensure_ascii=False, separators=(",", ":")
+        )
 
     def _timing(self, found):
         """Detour and drive time for each place, from one routing request that also answers later questions.
@@ -281,8 +290,6 @@ class ToolBox:
             "type": (place.get("primary_type") or "place").replace("_", " "),
             "rating": place["rating"],
             "rating_count": place["rating_count"],
-            "lat": place["lat"],
-            "lon": place["lon"],
             "hours_today": hours_text[weekday] if hours_text and len(hours_text) == 7 else None,
             "typical_visit_minutes": planner.visit_minutes(place),
             **timing,
@@ -322,7 +329,7 @@ class ToolBox:
             str(a): {str(b): (None if grid[i][j] is None else round(grid[i][j])) for j, b in enumerate(nodes) if i != j}
             for i, a in enumerate(nodes)
         }
-        return json.dumps({"minutes": minutes}), False
+        return json.dumps({"minutes": minutes}, separators=(",", ":")), False
 
     def _submit_itinerary(self, args):
         if self.itinerary is not None:
@@ -335,10 +342,15 @@ class ToolBox:
         log.info("submit stops=%s accepted=%s", len(stops) if isinstance(stops, list) else "?", not errors)
         if errors:
             left = MAX_SUBMISSIONS - self.submissions
-            tail = f" You can submit {left} more time(s)." if left else " No submissions left."
-            return "Rejected:\n- " + "\n- ".join(errors) + tail, True
+            tail = f"You can submit {left} more time(s)." if left else "No submissions left."
+            return "Rejected:\n- " + "\n- ".join(errors) + "\n" + tail, True
         for stop, proposed in zip(result["stops"], stops):
             stop["why"] = _text(proposed.get("why"), 200)
         result["summary"] = _text(args.get("summary"), 300)
+        trimmed = result.pop("trimmed", [])
         self.itinerary = result
-        return "Itinerary accepted.", False
+        if not trimmed:
+            return "Itinerary accepted.", False
+        log.info("submit trimmed=%s", trimmed)
+        changes = "; ".join(f"{name}: {before} to {after} minutes" for name, before, after in trimmed)
+        return f"Itinerary accepted. The server shortened visits so you arrive in time ({changes}).", False

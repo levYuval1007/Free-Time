@@ -1,6 +1,7 @@
 """Checks an itinerary proposed by the agent. The model only chooses places, their order and how long to stay;
 every time in the result is computed here from real driving times, so the model cannot invent a schedule."""
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -12,6 +13,8 @@ MAX_VISIT_MINUTES = 180
 # Extra driving a stop may add compared with going straight to the destination: about 10 minutes out of the
 # way and 10 minutes back to the road.
 MAX_DETOUR_MINUTES = 20
+# A plan this many minutes too late is fixed by shortening visits instead of being rejected.
+MAX_AUTO_TRIM_MINUTES = 15
 
 
 @dataclass
@@ -59,6 +62,72 @@ def _parse(proposed):
     return parsed, errors
 
 
+def _detour_problems(places, grid, last, direct):
+    """Stops that add too much driving compared with going straight to the destination."""
+    problems = []
+    if direct is None:
+        return problems
+    for index, (place, _) in enumerate(places, start=1):
+        if grid[0][index] is None or grid[index][last] is None:
+            continue
+        detour = grid[0][index] + grid[index][last] - direct
+        if detour > MAX_DETOUR_MINUTES:
+            problems.append(
+                f"'{place['name']}' adds about {round(detour)} minutes of driving compared with going "
+                f"straight to the destination; the limit is {MAX_DETOUR_MINUTES}"
+            )
+    return problems
+
+
+def _schedule(ctx, places, grid, last):
+    """Times for visiting the places in order: (stops, problems, arrival, final_drive_minutes).
+
+    stops is None when a leg has no route. problems lists places that are closed or have unknown hours.
+    """
+    problems = []
+    clock = ctx.now
+    stops = []
+    for index, (place, visit) in enumerate(places, start=1):
+        drive = grid[index - 1][index]
+        if drive is None:
+            return None, [f"there is no driving route to '{place['name']}'"], None, None
+        arrive = clock + timedelta(minutes=drive)
+        leave = arrive + timedelta(minutes=visit)
+        window_end = leave + timedelta(minutes=planner.CLOSING_MARGIN_MINUTES)
+        open_now = hours.is_open_during(place.get("periods"), place.get("utc_offset_minutes"), arrive, window_end)
+        if open_now is None:
+            problems.append(f"the opening hours of '{place['name']}' are unknown")
+        elif not open_now:
+            problems.append(
+                f"'{place['name']}' is not open for the whole visit "
+                f"({_local_clock(arrive, place)}-{_local_clock(leave, place)} local time, "
+                f"and it must stay open {planner.CLOSING_MARGIN_MINUTES} minutes after you leave)"
+            )
+        stops.append(
+            {"place": place, "drive_minutes": drive, "arrive": arrive, "leave": leave, "visit_minutes": visit}
+        )
+        clock = leave
+    final_drive = grid[last - 1][last]
+    if final_drive is None:
+        return None, ["there is no driving route from the last stop to the destination"], None, None
+    return stops, problems, clock + timedelta(minutes=final_drive), final_drive
+
+
+def _shorten(places, minutes):
+    """The places with `minutes` taken off their visits, starting with the last stop and never below the
+    minimum visit. None when the visits cannot give up that much."""
+    shortened = list(places)
+    for index in range(len(shortened) - 1, -1, -1):
+        if minutes <= 0:
+            break
+        place, visit = shortened[index]
+        cut = min(minutes, visit - MIN_VISIT_MINUTES)
+        if cut > 0:
+            shortened[index] = (place, visit - cut)
+            minutes -= cut
+    return shortened if minutes <= 0 else None
+
+
 def validate_itinerary(ctx: TripContext, proposed, travel_matrix):
     """Returns (result, errors). result is None unless errors is empty.
 
@@ -87,48 +156,34 @@ def validate_itinerary(ctx: TripContext, proposed, travel_matrix):
     last = len(points) - 1
 
     direct = grid[0][last]
-    clock = ctx.now
-    stops = []
-    for index, (place, visit) in enumerate(places, start=1):
-        if direct is not None and grid[0][index] is not None and grid[index][last] is not None:
-            detour = grid[0][index] + grid[index][last] - direct
-            if detour > MAX_DETOUR_MINUTES:
-                errors.append(
-                    f"'{place['name']}' adds about {round(detour)} minutes of driving compared with going "
-                    f"straight to the destination; the limit is {MAX_DETOUR_MINUTES}"
-                )
-        drive = grid[index - 1][index]
-        if drive is None:
-            errors.append(f"there is no driving route to '{place['name']}'")
-            return None, errors
-        arrive = clock + timedelta(minutes=drive)
-        leave = arrive + timedelta(minutes=visit)
-        window_end = leave + timedelta(minutes=planner.CLOSING_MARGIN_MINUTES)
-        open_now = hours.is_open_during(place.get("periods"), place.get("utc_offset_minutes"), arrive, window_end)
-        if open_now is None:
-            errors.append(f"the opening hours of '{place['name']}' are unknown")
-        elif not open_now:
-            errors.append(
-                f"'{place['name']}' is not open for the whole visit "
-                f"({_local_clock(arrive, place)}-{_local_clock(leave, place)} local time, "
-                f"and it must stay open {planner.CLOSING_MARGIN_MINUTES} minutes after you leave)"
-            )
-        stops.append(
-            {"place": place, "drive_minutes": drive, "arrive": arrive, "leave": leave, "visit_minutes": visit}
-        )
-        clock = leave
-
-    final_drive = grid[last - 1][last]
-    if final_drive is None:
-        errors.append("there is no driving route from the last stop to the destination")
+    errors = _detour_problems(places, grid, last, direct)
+    stops, problems, arrival, final_drive = _schedule(ctx, places, grid, last)
+    errors += problems
+    if stops is None:
         return None, errors
-    arrival = clock + timedelta(minutes=final_drive)
-    if arrival > ctx.latest_arrival:
+
+    trimmed = []
+    if not errors and arrival > ctx.latest_arrival:
+        late = math.ceil((arrival - ctx.latest_arrival).total_seconds() / 60)
+        shortened = _shorten(places, late) if late <= MAX_AUTO_TRIM_MINUTES else None
+        if shortened is not None:
+            new_stops, new_problems, new_arrival, new_final = _schedule(ctx, shortened, grid, last)
+            if not new_problems and new_arrival <= ctx.latest_arrival:
+                trimmed = [
+                    (before[0]["name"], before[1], after[1])
+                    for before, after in zip(places, shortened)
+                    if before[1] != after[1]
+                ]
+                stops, arrival, final_drive = new_stops, new_arrival, new_final
+    if not errors and arrival > ctx.latest_arrival:
         late = round((arrival - ctx.latest_arrival).total_seconds() / 60)
         errors.append(
-            f"you would reach the destination {late} minutes after the latest allowed time "
+            f"you would reach the destination {late} minute{'' if late == 1 else 's'} after the latest allowed time "
             f"(the deadline minus a {ctx.buffer_minutes} minute safety margin); shorten a visit or drop a stop"
         )
     if errors:
         return None, errors
-    return {"stops": stops, "final_drive_minutes": final_drive, "arrive_destination": arrival}, []
+    result = {"stops": stops, "final_drive_minutes": final_drive, "arrive_destination": arrival}
+    if trimmed:
+        result["trimmed"] = trimmed
+    return result, []
