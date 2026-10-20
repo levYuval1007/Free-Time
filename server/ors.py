@@ -10,6 +10,9 @@ from http_client import PooledClient, TransportError
 
 API_HOST = "api.openrouteservice.org"
 ROUTE_CACHE_TTL_S = 120
+# A failure is remembered just long enough for the requests waiting behind it to share it, so that each of
+# them does not wait out its own timeout. A new attempt after this is a real retry.
+ROUTE_FAILURE_TTL_S = 5
 ROUTE_TIMEOUT_S = 10  # a directions or matrix request normally takes well under a second
 GATEWAY_STATUSES = {502, 503, 504}  # a blip at the service's front door: worth one more try
 UNAVAILABLE_MESSAGE = "The routing service is not responding right now. Please try again in a minute."
@@ -100,23 +103,31 @@ def matrix(points):
     return [[None if seconds is None else seconds / 60 for seconds in row] for row in data["durations"]]
 
 
-_route_cache = {}  # key -> (expires, result)
+_route_cache = {}  # key -> (expires, result or the RouteError that the attempt ended with)
 _route_locks = {}
 _route_guard = threading.Lock()
 
 
 def route_coords(start_lon, start_lat, end_lon, end_lat):
     """The direct route. Answers are kept for a couple of minutes and identical requests that arrive together
-    share one call, because the page and the planning job both ask for the same route."""
+    share one call (and one failure), because the page and the planning job both ask for the same route."""
     key = tuple(round(value, 5) for value in (start_lon, start_lat, end_lon, end_lat))
     with _route_guard:
         lock = _route_locks.setdefault(key, threading.Lock())
     with lock:
         hit = _route_cache.get(key)
         if hit and hit[0] > time.monotonic():
+            if isinstance(hit[1], RouteError):
+                log.info("direct route failed a moment ago; not asking again")
+                raise type(hit[1])(str(hit[1]))
             log.info("direct route served from the cache")
             return dict(hit[1])
-        result = route_through([(start_lon, start_lat), (end_lon, end_lat)])
+        try:
+            result = route_through([(start_lon, start_lat), (end_lon, end_lat)])
+        except RouteError as err:
+            with _route_guard:
+                _route_cache[key] = (time.monotonic() + ROUTE_FAILURE_TTL_S, err)
+            raise
         now = time.monotonic()
         with _route_guard:
             _route_cache[key] = (now + ROUTE_CACHE_TTL_S, result)
