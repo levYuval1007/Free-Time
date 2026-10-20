@@ -12,6 +12,7 @@ import agent
 import agent_tools
 import budget
 import config
+import fill
 import limits
 import ors
 import places
@@ -60,6 +61,14 @@ class PlanOutcome:
     result: dict
     degraded_reason: str | None = None
     stats: dict | None = None  # rounds, searches and tokens of the agent run, for logs and evals
+
+
+def _use_spare_time(chosen, now, request: PlanRequest, free_time):
+    """Lengthen visits when the plan leaves much more spare time than wanted (see fill.py)."""
+    filled, extensions = fill.fill_free_time(chosen, now, request.arrive_by, free_time["buffer_minutes"])
+    if extensions:
+        log.info("lengthened visits to use spare time: %s", extensions)
+    return filled
 
 
 def _format_plan(free_time, chosen, now, considered, request: PlanRequest, deps: Deps, source, summary=None):
@@ -125,6 +134,7 @@ def baseline_plan(request: PlanRequest, free_time, now, deps: Deps, known_places
             "budget": free_time, "stops": [], "reason": "no_feasible_plan",
             "candidates_considered": len(candidates), "source": "baseline",
         }
+    chosen = _use_spare_time(chosen, now, request, free_time)
     return _format_plan(free_time, chosen, now, len(candidates), request, deps, "baseline")
 
 
@@ -180,9 +190,10 @@ def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, n
     stats = {"rounds": outcome.rounds, "searches": outcome.searches, "tokens": limits.total_tokens(outcome.usage)}
     log.info(limits.cost_line(outcome.usage, outcome.searches, outcome.rounds))
     if outcome.status == "ok":
+        itinerary = _use_spare_time(outcome.itinerary, now, request, free_time)
         result = _format_plan(
-            free_time, outcome.itinerary, now, len(outcome.known_places), request, deps, "agent",
-            summary=outcome.itinerary.get("summary"),
+            free_time, itinerary, now, len(outcome.known_places), request, deps, "agent",
+            summary=itinerary.get("summary"),
         )
         return PlanOutcome("succeeded", result, stats=stats)
 

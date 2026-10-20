@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 import re
@@ -7,12 +8,14 @@ from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import budget
+import config
+import evalservice
 import jobs
 import jobtrace  # noqa: F401  (tags log lines with the job id)
 import limits
@@ -267,6 +270,53 @@ def get_plan_job(job_id: str):
     if job is None:
         raise HTTPException(404, "This plan is no longer available. Please plan again.")
     return _job_view(job)
+
+
+# ---- Admin: run the AI-vs-planner comparison on this server (it spends real money) ----
+
+class EvalStartRequest(BaseModel):
+    max_usd: float = Field(default=0.30, ge=0.05, le=1.0)
+    only: str | None = Field(default=None, max_length=40)
+
+
+def _require_admin(authorization: str | None):
+    """The admin endpoints exist only when ADMIN_TOKEN is set, and need it as a bearer token."""
+    token = config.get("ADMIN_TOKEN")
+    if not token:
+        raise HTTPException(404, "Not found")
+    supplied = authorization[len("Bearer "):] if authorization and authorization.startswith("Bearer ") else ""
+    if not hmac.compare_digest(supplied.encode(), token.encode()):
+        raise HTTPException(401, "Unauthorized")
+
+
+@app.post("/api/admin/evals", status_code=202)
+def start_eval(body: EvalStartRequest, authorization: str | None = Header(default=None)):
+    _require_admin(authorization)
+    try:
+        run_id = evalservice.runner.start(body.max_usd, body.only)
+    except evalservice.Busy as err:
+        raise HTTPException(409, str(err))
+    return {"id": run_id, "status": "running"}
+
+
+@app.get("/api/admin/evals")
+def list_evals(authorization: str | None = Header(default=None)):
+    _require_admin(authorization)
+    return {"runs": evalservice.runner.recent()}
+
+
+@app.get("/api/admin/evals/{run_id}")
+def get_eval(run_id: str, format: Literal["json", "md"] = "json", authorization: str | None = Header(default=None)):
+    _require_admin(authorization)
+    view = evalservice.runner.view(run_id)
+    if view is None:
+        raise HTTPException(404, "No such comparison (it may be from before a restart; the log has finished reports)")
+    if format == "md":
+        text = evalservice.runner.markdown(run_id)
+        if text is None:
+            raise HTTPException(409, f"The comparison is {view['status']}: {view['progress']}")
+        return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
+    return view
 
 
 CLIENT_DIST = Path(__file__).resolve().parent.parent / "client" / "dist"

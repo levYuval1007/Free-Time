@@ -3,3 +3,6 @@ __pycache__/
 .env
 node_modules/
 client/dist/
+
+# Results of the comparison evals (they may contain place names and costs).
+server/evals/results/
