@@ -25,7 +25,6 @@ JOB_BUDGET_S = 75  # no new model request starts after this
 STAGE_TEXT = {
     "search_places": "Searching for places",
     "search_along_route": "Searching along your route",
-    "get_travel_time": "Checking drive times",
     "submit_itinerary": "Checking the plan",
 }
 

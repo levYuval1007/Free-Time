@@ -23,6 +23,7 @@ MAX_TOKENS = 2000
 JOB_TOKEN_BUDGET = 60_000  # input + output + cache tokens for one plan; real runs use about 12k to 19k
 MAX_PREFERENCES_CHARS = 500
 REQUEST_TIMEOUT_S = 45
+EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
 
 SYSTEM_PROMPT = """You are the planning engine of Leeway, an app for drivers who have spare time before they must arrive somewhere. \
 Your job is to choose one to three worthwhile stops (parks, museums, viewpoints, cafes and similar) on the way, so the \
@@ -34,16 +35,18 @@ How to work:
 "scenic viewpoint" or "bakery"): the best stops are often in the middle of the trip. For a short drive, call search_places \
 near the start or the destination. Use the traveller's preferences to choose what to look for. You have only a few \
 searches, so make each one count, and when you need two searches ask for both in the same reply.
-3. Every place already shows detour_minutes (extra driving compared with going straight; places above the limit are \
-left out) and minutes_from_start, so get_travel_time is rarely needed. Prefer a small detour for a good place.
-4. Call submit_itinerary with the stops in visiting order. Give each a short, concrete reason.
+3. Every place shows detour_minutes (extra driving compared with going straight; places above the limit are left out), \
+minutes_from_start (drive from the start) and minutes_to_destination (drive from the place to the destination). Use \
+them to estimate the schedule: one stop takes minutes_from_start + the visit + minutes_to_destination, and two stops \
+close to each other add only a few minutes between them. Prefer a small detour for a good place.
+4. Submit as soon as you have good options. Do not search again without a clear reason, for example that nothing \
+suitable was found. Call submit_itinerary with the stops in visiting order and give each a short, concrete reason.
 
 Rules:
 - Use only place ids returned by search_places or search_along_route. Never invent places or ids.
-- Small timing slips are fixed for you: a plan up to 15 minutes too late is accepted after the server shortens \
-visits (never below 20 minutes), so do not spend effort on exact arithmetic.
-- Do not calculate arrival times yourself. The server computes the schedule from real driving times and checks opening \
-hours and the deadline. If it rejects your plan, read the problems, fix them and submit again.
+- The server computes the exact schedule from real driving times and checks opening hours and the deadline, so your \
+estimates only need to be roughly right. A plan up to 15 minutes too late is accepted after the server shortens visits \
+(never below 20 minutes). If it rejects your plan, read the problems, fix them and submit again.
 - A stop may add at most about 20 minutes of driving compared with going straight (roughly 10 minutes off the road and 10 back). The server rejects stops that add more.
 - Fewer, better stops beat cramming. Leave room for the drive and a safety margin; do not use every spare minute.
 - A place's opening hours are given for today. Do not pick a place that closes before the visit would end.
@@ -61,6 +64,15 @@ class AgentOutcome:
     usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0})
     searches: int = 0
     known_places: dict = field(default_factory=dict)  # everything the searches found, reusable by a fallback
+
+
+def _effort():
+    """How hard the model thinks, from AGENT_EFFORT (low, medium, high, xhigh or max). Unset keeps the default."""
+    value = (config.get("AGENT_EFFORT") or "").strip().lower()
+    if value and value not in EFFORT_LEVELS:
+        log.warning("AGENT_EFFORT=%r is not one of %s; using the default", value, sorted(EFFORT_LEVELS))
+        return None
+    return value or None
 
 
 def make_client():
@@ -125,6 +137,8 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
     messages = [{"role": "user", "content": user_message}]
     system = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
     tools = _tools_with_cache_marker()
+    effort = _effort()
+    options = {"output_config": {"effort": effort}} if effort else {}
 
     for round_number in range(1, MAX_ROUNDS + 1):
         if deadline is not None and time.monotonic() > deadline:
@@ -139,6 +153,7 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
             response = client.messages.create(
                 model=model, max_tokens=MAX_TOKENS, system=system, tools=tools, messages=messages,
                 cache_control={"type": "ephemeral"},  # the places from earlier rounds are re-read from the cache
+                **options,
             )
         except anthropic.APIError as err:
             log.warning("Claude request failed in round %d: %s", round_number, err)
@@ -191,7 +206,7 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
     elif outcome.reason is None:
         outcome.reason = "itinerary_rejected"
     log.info(
-        "agent status=%s reason=%s rounds=%d searches=%d tokens=%s",
-        outcome.status, outcome.reason, outcome.rounds, outcome.searches, outcome.usage,
+        "agent status=%s reason=%s rounds=%d searches=%d effort=%s tokens=%s",
+        outcome.status, outcome.reason, outcome.rounds, outcome.searches, effort or "default", outcome.usage,
     )
     return outcome

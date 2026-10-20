@@ -172,8 +172,7 @@ class ToolBoxRoutingTests(unittest.TestCase):
             raise ors.QuotaExceeded("The routing service has reached its usage limit. Please try again later.")
 
         box = self.make(down)
-        box.run("search_places", {"lat": 32.08, "lon": 34.78, "radius_m": 2000})
-        text, is_error = box.run("get_travel_time", {"nodes": ["origin", "a"]})
+        text, is_error = box.run("search_places", {"lat": 32.08, "lon": 34.78, "radius_m": 2000})
         self.assertTrue(is_error)
         self.assertIn("usage limit", text)
         text, is_error = box.run("submit_itinerary", {"stops": [{"place_id": "a"}], "summary": ""})
@@ -186,8 +185,6 @@ class ToolBoxRoutingTests(unittest.TestCase):
         times.register([ORIGIN, DESTINATION])
         box = self.make(times)
         box.run("search_places", {"lat": 32.08, "lon": 34.78, "radius_m": 2000})
-        box.run("get_travel_time", {"nodes": ["origin", "a", "b"]})
-        box.run("get_travel_time", {"nodes": ["a", "b", "destination"]})
         stops = [{"place_id": "a", "visit_minutes": 30}, {"place_id": "b", "visit_minutes": 30}]
         text, is_error = box.run("submit_itinerary", {"stops": stops, "summary": "ok"})
         self.assertFalse(is_error, text)

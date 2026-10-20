@@ -189,21 +189,6 @@ class ToolBoxTests(unittest.TestCase):
         self.assertTrue(is_error)
         self.assertIn("down", text)
 
-    def test_travel_time_matrix(self):
-        box, _ = toolbox([place("a")], minutes=12)
-        box.run("search_places", {"lat": 32.08, "lon": 34.78, "radius_m": 2000})
-        text, is_error = box.run("get_travel_time", {"nodes": ["origin", "a", "destination"]})
-        self.assertFalse(is_error)
-        minutes = json.loads(text)["minutes"]
-        self.assertEqual(minutes["origin"]["a"], 12)
-        self.assertNotIn("origin", minutes["origin"])
-
-    def test_travel_time_rejects_unknown_and_duplicate_nodes(self):
-        box, _ = toolbox([])
-        self.assertTrue(box.run("get_travel_time", {"nodes": ["origin", "ghost"]})[1])
-        self.assertTrue(box.run("get_travel_time", {"nodes": ["origin", "origin"]})[1])
-        self.assertTrue(box.run("get_travel_time", {"nodes": ["origin"]})[1])
-
     def test_submit_accepts_and_records_reasons(self):
         box, _ = toolbox([place("a")])
         box.run("search_places", {"lat": 32.08, "lon": 34.78, "radius_m": 2000})
@@ -233,7 +218,7 @@ class ToolBoxTests(unittest.TestCase):
 
     def test_tool_definitions_match_the_handlers(self):
         names = [tool["name"] for tool in agent_tools.TOOLS]
-        self.assertEqual(names, ["search_places", "search_along_route", "get_travel_time", "submit_itinerary"])
+        self.assertEqual(names, ["search_places", "search_along_route", "submit_itinerary"])
         for tool in agent_tools.TOOLS:
             self.assertEqual(tool["input_schema"]["type"], "object")
 

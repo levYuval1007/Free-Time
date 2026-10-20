@@ -34,12 +34,10 @@ class DescribeCallTests(unittest.TestCase):
 
     def test_the_route_query_and_counts_are_shown(self):
         self.assertEqual(agent_tools.describe_call("search_along_route", {"query": "  scenic   view "}), "search_along_route(query='scenic view')")
-        self.assertEqual(agent_tools.describe_call("get_travel_time", {"nodes": ["origin", "a", "b"]}), "get_travel_time(nodes=3)")
         self.assertEqual(agent_tools.describe_call("submit_itinerary", {"stops": [{}, {}]}), "submit_itinerary(stops=2)")
 
     def test_bad_arguments_do_not_crash_the_summary(self):
         self.assertEqual(agent_tools.describe_call("search_places", "oops"), "search_places")
-        self.assertEqual(agent_tools.describe_call("get_travel_time", {"nodes": 5}), "get_travel_time(nodes=?)")
         self.assertEqual(agent_tools.describe_call("mystery", {}), "mystery")
 
 

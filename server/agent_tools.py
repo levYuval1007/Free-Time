@@ -18,14 +18,12 @@ import validator
 log = logging.getLogger("tools")
 
 MAX_SEARCHES = 3
-MAX_TRAVEL_CALLS = 4
 MAX_SUBMISSIONS = 3
 MAX_RESULTS = 20  # places checked for detour per search
 MAX_SHOWN = 12  # places shown to the model per search, best quality first
 MIN_RADIUS_M = 300
 MAX_RADIUS_M = 5000
 MAX_SEARCH_DISTANCE_KM = 15  # a search centre must be close to the start or the destination
-MAX_TRAVEL_NODES = 8
 MAX_ROUTE_DISTANCE_KM = 15  # places farther than this from the route are dropped; the validator checks the real detour
 MAX_POLYLINE_POINTS = 200  # Google does not document a size limit, so the route is kept short
 MAX_QUERY_CHARS = 80
@@ -45,9 +43,10 @@ TOOLS = [
     {
         "name": "search_places",
         "description": (
-            "Find places to visit near a point. Returns up to 20 open, well-rated places with id, name, "
-            "type, rating, coordinates and today's opening hours. Only places returned here can be used in "
-            "the itinerary. Search near the start or the destination."
+            "Find places to visit near a point. Returns up to 12 open, well-rated places with id, name, type, "
+            "rating, today's opening hours, detour_minutes (extra driving compared with going straight), "
+            "minutes_from_start and minutes_to_destination. Only places returned here can be used in the "
+            "itinerary. Search near the start or the destination."
         ),
         "input_schema": {
             "type": "object",
@@ -69,9 +68,10 @@ TOOLS = [
         "description": (
             "Find places that match a free-text query anywhere along the direct driving route from the start to the "
             "destination, for example 'park', 'scenic viewpoint', 'bakery' or 'waterfall'. Use it when the best "
-            "stops may be in the middle of the trip and not near either end. Returns up to 20 places with id, name, "
-            "type, rating, coordinates, today's opening hours and km_from_route (straight-line distance from the "
-            "road), detour_minutes (extra driving compared with going straight) and minutes_from_start. Only places returned by a search can be used in the itinerary."
+            "stops may be in the middle of the trip and not near either end. Returns up to 12 places with id, name, "
+            "type, rating, today's opening hours, km_from_route (straight-line distance from the road), "
+            "detour_minutes (extra driving compared with going straight), minutes_from_start and "
+            "minutes_to_destination. Only places returned by a search can be used in the itinerary."
         ),
         "input_schema": {
             "type": "object",
@@ -79,18 +79,6 @@ TOOLS = [
                 "query": {"type": "string", "description": "What to look for, in a few words."},
             },
             "required": ["query"],
-        },
-    },
-    {
-        "name": "get_travel_time",
-        "description": (
-            "Driving minutes between 2 to 8 nodes. A node is 'origin', 'destination' or a place id returned "
-            "by search_places. Returns a matrix: minutes[from][to]."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {"nodes": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": MAX_TRAVEL_NODES}},
-            "required": ["nodes"],
         },
     },
     {
@@ -136,9 +124,6 @@ def describe_call(name, args):
         return f"search_along_route(query={_text(args.get('query'), MAX_QUERY_CHARS)!r})"
     if name == "search_places":
         return f"search_places(radius_m={args.get('radius_m')}, types={args.get('types')})"
-    if name == "get_travel_time":
-        nodes = args.get("nodes")
-        return f"get_travel_time(nodes={len(nodes) if isinstance(nodes, list) else '?'})"
     if name == "submit_itinerary":
         stops = args.get("stops")
         return f"submit_itinerary(stops={len(stops) if isinstance(stops, list) else '?'})"
@@ -159,7 +144,6 @@ class ToolBox:
         self._polyline = None
         self._travel_matrix = travel_matrix
         self.searches = 0
-        self.travel_calls = 0
         self.submissions = 0
         self.itinerary = None  # set once a submission passes validation
 
@@ -171,7 +155,6 @@ class ToolBox:
         handler = {
             "search_places": self._search_places,
             "search_along_route": self._search_along_route_tool,
-            "get_travel_time": self._get_travel_time,
             "submit_itinerary": self._submit_itinerary,
         }.get(name)
         if handler is None:
@@ -256,7 +239,11 @@ class ToolBox:
             detour = out + back - direct
             if detour > validator.MAX_DETOUR_MINUTES:
                 continue
-            timing[place["id"]] = {"detour_minutes": max(0, round(detour)), "minutes_from_start": round(out)}
+            timing[place["id"]] = {
+                "detour_minutes": max(0, round(detour)),
+                "minutes_from_start": round(out),
+                "minutes_to_destination": round(back),
+            }
         return timing
 
     def _search_along_route_tool(self, args):
@@ -301,35 +288,6 @@ class ToolBox:
     def _local_weekday(self, place):
         local = self.ctx.now + timedelta(minutes=place.get("utc_offset_minutes") or 0)
         return local.weekday()  # Google lists Monday first, like Python
-
-    def _node_point(self, node):
-        if node == "origin":
-            return self.ctx.origin
-        if node == "destination":
-            return self.ctx.destination
-        place = self.ctx.known_places.get(node) if isinstance(node, str) else None
-        return (place["lon"], place["lat"]) if place else None
-
-    def _get_travel_time(self, args):
-        nodes = args.get("nodes")
-        if not isinstance(nodes, list) or not 2 <= len(nodes) <= MAX_TRAVEL_NODES:
-            return f"nodes must list 2 to {MAX_TRAVEL_NODES} entries", True
-        if len(set(map(str, nodes))) != len(nodes):
-            return "nodes must be distinct", True
-        points = [self._node_point(node) for node in nodes]
-        unknown = [str(node) for node, point in zip(nodes, points) if point is None]
-        if unknown:
-            return f"Unknown nodes: {', '.join(unknown)}. Use 'origin', 'destination' or ids from search_places.", True
-        if self.travel_calls >= MAX_TRAVEL_CALLS:
-            return f"The travel time limit ({MAX_TRAVEL_CALLS}) is used up.", True
-        self.travel_calls += 1
-
-        grid = self._travel_matrix(points)
-        minutes = {
-            str(a): {str(b): (None if grid[i][j] is None else round(grid[i][j])) for j, b in enumerate(nodes) if i != j}
-            for i, a in enumerate(nodes)
-        }
-        return json.dumps({"minutes": minutes}, separators=(",", ":")), False
 
     def _submit_itinerary(self, args):
         if self.itinerary is not None:

@@ -81,7 +81,7 @@ class LoopTests(unittest.TestCase):
 
     def test_tool_results_go_back_in_one_user_message_with_matching_ids(self):
         claude = FakeClaude(
-            reply(tool_use("t1", "search_places", **SEARCH), tool_use("t2", "get_travel_time", nodes=["origin", "destination"])),
+            reply(tool_use("t1", "search_places", **SEARCH), tool_use("t2", "search_places", **SEARCH)),
             reply(submit("t3")),
         )
         agent.run_agent(claude, make_box(), "trip")
@@ -132,7 +132,7 @@ class LoopTests(unittest.TestCase):
         self.assertEqual((outcome.status, outcome.reason), ("failed", "llm_unavailable"))
 
     def test_round_limit(self):
-        script = [reply(tool_use(f"t{i}", "get_travel_time", nodes=["origin", "destination"])) for i in range(agent.MAX_ROUNDS + 3)]
+        script = [reply(tool_use(f"t{i}", "search_places", **SEARCH)) for i in range(agent.MAX_ROUNDS + 3)]
         claude = FakeClaude(*script)
         outcome = agent.run_agent(claude, make_box(), "trip")
         self.assertEqual(outcome.reason, "too_many_rounds")
@@ -145,7 +145,7 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(call["model"], "claude-sonnet-5")
         self.assertEqual(call["system"][0]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(call["tools"][-1]["cache_control"], {"type": "ephemeral"})
-        self.assertEqual([t["name"] for t in call["tools"]], ["search_places", "search_along_route", "get_travel_time", "submit_itinerary"])
+        self.assertEqual([t["name"] for t in call["tools"]], ["search_places", "search_along_route", "submit_itinerary"])
         # The shared tool definitions are not modified by adding the cache marker.
         self.assertNotIn("cache_control", agent_tools.TOOLS[-1])
 
