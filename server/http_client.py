@@ -27,6 +27,10 @@ class PooledClient:
                 conn.request(method, path, body=body, headers=headers or {})
                 resp = conn.getresponse()
                 raw = resp.read()
+            except TimeoutError:
+                # A server that did not answer in time will not answer a second try any faster.
+                conn.close()
+                raise TransportError(f"no answer within {self.timeout} seconds")
             except (http.client.HTTPException, OSError) as err:
                 conn.close()
                 if attempt == 2:

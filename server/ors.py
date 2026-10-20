@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 import threading
 import time
 import urllib.parse
@@ -9,6 +10,9 @@ from http_client import PooledClient, TransportError
 
 API_HOST = "api.openrouteservice.org"
 ROUTE_CACHE_TTL_S = 120
+ROUTE_TIMEOUT_S = 10  # a directions or matrix request normally takes well under a second
+GATEWAY_STATUSES = {502, 503, 504}  # a blip at the service's front door: worth one more try
+UNAVAILABLE_MESSAGE = "The routing service is not responding right now. Please try again in a minute."
 
 log = logging.getLogger("ors")
 
@@ -28,22 +32,32 @@ def _key():
     return key
 
 
-_client = PooledClient(API_HOST)
+_client = PooledClient(API_HOST, timeout=ROUTE_TIMEOUT_S)
 
 
 def _call(method, path, body=None, headers=None):
-    started = time.perf_counter()
-    try:
-        status, raw = _client.request(method, path, body, headers)
-    except TransportError as err:
-        raise RouteError(f"Could not reach OpenRouteService: {err}")
+    where = f"{method} {path.split('?')[0]}"
+    for attempt in (1, 2):
+        started = time.perf_counter()
+        try:
+            status, raw = _client.request(method, path, body, headers)
+        except TransportError as err:
+            log.warning("OpenRouteService %s unreachable after %d ms: %s", where, (time.perf_counter() - started) * 1000, err)
+            raise RouteError(UNAVAILABLE_MESSAGE)
+        if status in GATEWAY_STATUSES and attempt == 1:
+            log.warning("OpenRouteService %s -> %s, trying once more", where, status)
+            time.sleep(random.uniform(0.3, 0.8))
+            continue
+        break
     if status != 200:
         detail = raw.decode(errors="replace")
-        log.warning("OpenRouteService %s %s -> %s %s", method, path.split("?")[0], status, detail[:200])
+        log.warning("OpenRouteService %s -> %s %s", where, status, " ".join(detail.split())[:200])
         if status == 429 or (status == 403 and "quota" in detail.lower()):
             raise QuotaExceeded("The routing service has reached its usage limit. Please try again later.")
+        if status >= 500:
+            raise RouteError(UNAVAILABLE_MESSAGE)
         raise RouteError(f"The routing service returned an error ({status}).")
-    log.info("%s %s ms=%d", method, path.split("?")[0], (time.perf_counter() - started) * 1000)
+    log.info("%s ms=%d", where, (time.perf_counter() - started) * 1000)
     return json.loads(raw)
 
 

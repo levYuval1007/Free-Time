@@ -147,6 +147,7 @@ class JobRunner:
             outcome = work(lambda text: store.set_stage(job_id, text))
             store.finish(job_id, outcome.status, result=outcome.result, degraded_reason=outcome.degraded_reason)
         except (ors.RouteError, places.PlacesError) as err:
+            log.warning("plan job %s failed: %s", job_id, err)
             store.finish(job_id, FAILED, error=str(err))
         except Exception:
             log.exception("plan job %s crashed", job_id)
@@ -155,4 +156,7 @@ class JobRunner:
             except IllegalTransition:
                 pass
         job = store.get(job_id)
-        log.info("job=%s status=%s ms=%d", job_id, job.status if job else "gone", (time.perf_counter() - started) * 1000)
+        log.info(
+            "job=%s status=%s ms=%d%s", job_id, job.status if job else "gone", (time.perf_counter() - started) * 1000,
+            f" error={job.error!r}" if job and job.error else "",
+        )
