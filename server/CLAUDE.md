@@ -56,3 +56,4 @@
 - `search_places` results are cut to 12 after the detour check, but all checked places stay in `ctx.known_places`.
 - The Places field mask includes rating and opening hours, which bills at the higher Enterprise tier. Do not add fields casually.
 - `ors.route_coords` caches for 120 s and remembers a failure for 5 s so concurrent requests share one outcome.
+- Typical visit lengths live in `planner.VISIT_MINUTES` (the model sees them, and `fill.py` lets a visit grow to twice its typical length); give new place types a realistic value so a cafe is not stretched into an hour and a half.

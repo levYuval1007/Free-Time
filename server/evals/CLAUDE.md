@@ -8,10 +8,10 @@
 
 ## What it checks (by code, not by eye)
 
-At most three stops, stops in time order, arrival before the deadline minus the safety margin, no stops when there is no free time, no leaked prompt or tool names in the output, and for the long-route scenario at least one stop far from both ends. The report puts both planners side by side: valid or not, whether a stop matches the preference (by place type, `wants` on the scenario), spare minutes at arrival, stops, rating, extra driving, time and cost.
+At most three stops, stops in time order, arrival before the deadline minus the safety margin, no stops when there is no free time, no leaked prompt or tool names in the output, and for the long-route scenario at least one stop far from both ends. The report puts both planners side by side: valid or not (both plans go through the same validator rules, `comparison.recheck`, because the planner has no detour rule), how many stops fit the preference (`wants`, any type of the place) and how many contradict it (`avoids`, main type only), spare minutes at arrival, stops, rating, extra driving, time and cost.
 
 ## Adding a scenario
 
-Add a `Scenario(...)` to `SCENARIOS` in `comparison.py` (put `wants` place types if a preference can be checked by type) and, if it needs a new kind of check, extend `check()` and cover that check in `tests/test_evals.py` (the checker itself is unit-tested offline). Keep the set small: every scenario costs money each time it runs.
+Add a `Scenario(...)` to `SCENARIOS` in `comparison.py` (put `wants` place types, and `avoids` for main types that contradict it, if a preference can be checked by type) and, if it needs a new kind of check, extend `check()` and cover that check in `tests/test_evals.py` (the checker itself is unit-tested offline). Keep the set small: every scenario costs money each time it runs.
 
 To compare models or settings, change `AGENT_MODEL` / `AGENT_EFFORT` in the environment, run the same scenarios, and compare the printed rounds, tokens and time. Say clearly what was measured and on how few runs.

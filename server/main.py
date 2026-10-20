@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import adminpage
 import budget
+import comparison
 import config
 import evalservice
 import jobs
@@ -301,6 +302,10 @@ def admin_evals_page():
 @app.post("/api/admin/evals", status_code=202)
 def start_eval(body: EvalStartRequest, authorization: str | None = Header(default=None)):
     _require_admin(authorization)
+    if body.only and not comparison.matching_scenarios(body.only):
+        raise HTTPException(
+            400, f"No scenario name contains '{body.only}'. Available: {', '.join(comparison.scenario_names())}"
+        )
     try:
         run_id = evalservice.runner.start(body.max_usd, body.only)
     except evalservice.Busy as err:
@@ -311,7 +316,11 @@ def start_eval(body: EvalStartRequest, authorization: str | None = Header(defaul
 @app.get("/api/admin/evals")
 def list_evals(authorization: str | None = Header(default=None)):
     _require_admin(authorization)
-    return {"runs": evalservice.runner.recent(), "storage": evalservice.runner.storage_kind}
+    return {
+        "runs": evalservice.runner.recent(),
+        "storage": evalservice.runner.storage_kind,
+        "scenarios": comparison.scenario_names(),
+    }
 
 
 @app.get("/api/admin/storage")

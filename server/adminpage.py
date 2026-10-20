@@ -31,11 +31,12 @@ HTML = """<!doctype html>
   <p>Runs the real agent and the planner on fixed trips and writes a report. This spends real money, limited by the budget below.</p>
 
   <label for="token">Admin token (kept only in this page, never stored)</label>
-  <input id="token" type="password" autocomplete="off">
+  <input id="token" type="password" autocomplete="new-password">
   <label for="budget">Budget in US dollars (0.05 to 1.00)</label>
   <input id="budget" type="number" min="0.05" max="1" step="0.05" value="0.30">
-  <label for="only">Only scenarios whose name contains (optional)</label>
-  <input id="only" maxlength="40">
+  <label for="only">Run only scenarios whose name contains this text (leave empty to run them all)</label>
+  <input id="only" name="scenario-filter" maxlength="40" autocomplete="off" placeholder="empty = all scenarios">
+  <p id="scenarios"></p>
   <button id="start">Start comparison</button>
   <button id="refresh">Refresh the list</button>
   <button id="check">Check storage</button>
@@ -107,8 +108,9 @@ HTML = """<!doctype html>
   async function refresh() {
     clearTimeout(timer);
     try {
-      const { runs, storage } = await call("/api/admin/evals");
+      const { runs, storage, scenarios } = await call("/api/admin/evals");
       renderRuns(runs);
+      $("scenarios").textContent = "Scenarios: " + scenarios.join(", ");
       $("storage").textContent = storage === "postgres"
         ? "Reports are saved in the database and survive restarts."
         : "Reports are saved as files on the server; a free host loses them when it restarts. The log keeps a copy.";

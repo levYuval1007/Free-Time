@@ -303,7 +303,8 @@ class StorageEndpointTests(unittest.TestCase):
         self.assertNotIn("s3cret", res.text)
 
     def test_the_list_names_the_storage_kind(self):
-        self.assertEqual(self.client.get("/api/admin/evals", headers=AUTH).json(), {"runs": [], "storage": "postgres"})
+        listed = self.client.get("/api/admin/evals", headers=AUTH).json()
+        self.assertEqual((listed["runs"], listed["storage"]), ([], "postgres"))
 
     def test_a_report_from_before_a_restart_can_be_downloaded(self):
         first = self.client.post("/api/admin/evals", json={}, headers=AUTH).json()["id"]

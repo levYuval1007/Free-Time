@@ -89,6 +89,29 @@ class AdminApiTests(unittest.TestCase):
             self.assertIn("error", res.json())
         self.assertEqual(self.calls, [])
 
+    def test_a_filter_that_matches_no_scenario_is_refused_and_nothing_starts(self):
+        res = self.start({"only": "zzz"})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("No scenario name contains 'zzz'", res.json()["error"])
+        self.assertIn("quiet coffee", res.json()["error"])
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.client.get("/api/admin/evals", headers=AUTH).json()["runs"], [])
+
+    def test_a_filter_that_matches_is_accepted_in_any_case(self):
+        run_id = self.start({"only": "KIDS"}).json()["id"]
+        self.wait_done(run_id)
+        self.assertEqual(self.calls, [(0.30, "KIDS")])
+
+    def test_an_empty_filter_means_all_scenarios(self):
+        run_id = self.start({"only": ""}).json()["id"]
+        self.wait_done(run_id)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_the_list_names_the_scenarios_for_the_page(self):
+        listed = self.client.get("/api/admin/evals", headers=AUTH).json()
+        self.assertIn("quiet coffee", listed["scenarios"])
+        self.assertIn("too little time", listed["scenarios"])
+
     def test_the_status_and_the_report_can_be_read(self):
         run_id = self.start().json()["id"]
         self.wait_done(run_id)
@@ -180,6 +203,14 @@ class AdminPageTests(unittest.TestCase):
         html = self.client.get("/admin/evals").text
         for storage in ("localStorage", "sessionStorage", "document.cookie", "indexedDB"):
             self.assertNotIn(storage, html)
+
+    def test_the_filter_field_is_labelled_and_protected_from_autofill(self):
+        html = self.client.get("/admin/evals").text
+        self.assertIn('id="only" name="scenario-filter"', html)
+        self.assertIn('autocomplete="off"', html)
+        self.assertIn('autocomplete="new-password"', html)
+        self.assertIn("leave empty to run them all", html)
+        self.assertIn("scenarios.join", html)
 
     def test_the_page_is_not_in_the_public_api_docs(self):
         self.assertNotIn("/admin/evals", self.client.get("/openapi.json").text.replace("/api/admin/evals", ""))

@@ -18,6 +18,14 @@ VISIT_MINUTES = {
     "park": 45,
     "tourist_attraction": 45,
     "historical_landmark": 30,
+    "cafe": 30,
+    "coffee_shop": 30,
+    "bakery": 20,
+    "ice_cream_shop": 20,
+    "restaurant": 60,
+    "aquarium": 90,
+    "zoo": 120,
+    "amusement_park": 150,
 }
 
 # Rows and columns of the travel matrix follow this order: origin, destination, then the candidates.

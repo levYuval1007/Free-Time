@@ -26,6 +26,8 @@ import ors
 import places
 import planner
 import planning
+import travel
+import validator
 
 log = logging.getLogger("comparison")
 
@@ -48,8 +50,10 @@ HAIFA = ((34.9896, 32.7940), "Haifa")
 EILAT = ((34.9519, 29.5577), "Eilat")
 
 COFFEE = ("cafe", "coffee_shop", "bakery")
-KIDS = ("playground", "zoo", "aquarium", "amusement_park")
+KIDS = ("playground", "zoo", "aquarium", "amusement_park", "park")  # a park is a fine place for small children
 MUSEUMS = ("museum", "art_museum", "art_gallery")
+# "Quiet places" is contradicted by a stop whose main type is a restaurant or a bar.
+NOT_QUIET = ("restaurant", "bar", "night_club", "pub", "bar_and_grill")
 
 
 @dataclass
@@ -62,11 +66,12 @@ class Scenario:
     expect_stops: bool = True
     min_km_from_ends: float = 0  # at least one stop must be this far from both the start and the destination
     wants: tuple = ()  # place types that satisfy the preference; empty when there is nothing to match
+    avoids: tuple = ()  # main place types that contradict the preference
 
 
 # Ordered by how much they teach: with the default cap the first two or three run.
 SCENARIOS = [
-    Scenario("quiet coffee", TEL_AVIV, JERUSALEM, 4, "quiet places, coffee first", wants=COFFEE),
+    Scenario("quiet coffee", TEL_AVIV, JERUSALEM, 4, "quiet places, coffee first", wants=COFFEE, avoids=NOT_QUIET),
     Scenario("with kids", TEL_AVIV, HAIFA, 4, "with two small kids", wants=KIDS),
     Scenario("museums", JERUSALEM, TEL_AVIV, 3, "museums and art", wants=MUSEUMS),
     Scenario("along a long route", TEL_AVIV, EILAT, 8, "a scenic stop in the desert on the way", min_km_from_ends=40),
@@ -246,12 +251,36 @@ def measure(scenario: Scenario, result: dict, arrive_by: datetime, places_by_id:
         ratings = [stop["rating"] for stop in stops if stop.get("rating") is not None]
         out["avg_rating"] = round(sum(ratings) / len(ratings), 2) if ratings else None
         out["visit_minutes"] = sum(stop["visit_minutes"] for stop in stops)
-    if scenario.wants:
-        wanted = set(scenario.wants)
-        out["matches_preference"] = any(
-            wanted & {stop.get("primary_type"), *places_by_id.get(stop["id"], {}).get("types", [])} for stop in stops
+    out["matching_stops"] = out["avoided_stops"] = None
+    if scenario.wants or scenario.avoids:
+        wanted, avoided = set(scenario.wants), set(scenario.avoids)
+        out["matching_stops"] = sum(
+            1 for stop in stops
+            if wanted & {stop.get("primary_type"), *places_by_id.get(stop["id"], {}).get("types", [])}
         )
+        out["avoided_stops"] = sum(1 for stop in stops if stop.get("primary_type") in avoided)
+        # It fits when something is of a wanted type (if any type is wanted) and nothing contradicts it.
+        out["matches_preference"] = (out["matching_stops"] >= 1 if wanted else bool(stops)) and out["avoided_stops"] == 0
     return out
+
+
+def recheck(result: dict, request, now, free_time, route, known_places: dict, deps) -> list[str]:
+    """The same rules the agent's plans must satisfy (detour, opening hours, deadline), applied to a finished plan.
+
+    The planner has no detour rule of its own, so without this its plans would look cleaner than they are.
+    """
+    if not result.get("stops"):
+        return []
+    ctx = validator.TripContext(
+        now=now, arrive_by=request.arrive_by, buffer_minutes=free_time["buffer_minutes"], origin=request.origin,
+        destination=request.destination, known_places=dict(known_places), route=route,
+    )
+    proposed = [{"place_id": stop["id"], "visit_minutes": stop["visit_minutes"]} for stop in result["stops"]]
+    try:
+        _, errors = validator.validate_itinerary(ctx, proposed, travel.TravelTimes(deps.travel_matrix))
+    except ors.RouteError as err:
+        return [f"could not be re-checked: {err}"]
+    return errors
 
 
 def run_scenario(scenario: Scenario, spend: Spend, now=None, backends=None) -> dict:
@@ -286,12 +315,17 @@ def run_scenario(scenario: Scenario, spend: Spend, now=None, backends=None) -> d
             "stats": outcome.stats,
         }
         entry["seconds"] = round(time.perf_counter() - started, 1)
-        if scenario.expect_stops and recorder.places:
-            _, free_time, _ = planning.compute_free_time(request, now, deps)
+        has_stops = bool(outcome.result.get("stops"))
+        compare = scenario.expect_stops and bool(recorder.places)
+        if has_stops or compare:
+            _, free_time, route = planning.compute_free_time(request, now, deps)
+        if has_stops:
+            entry["agent"]["problems"] += recheck(outcome.result, request, now, free_time, route, recorder.places, deps)
+        entry["planner"] = None
+        if compare:
             baseline = planning.baseline_plan(request, free_time, now, deps, known_places=recorder.places)
             entry["planner"] = measure(scenario, baseline, arrive_by, recorder.places)
-        else:
-            entry["planner"] = None
+            entry["planner"]["problems"] += recheck(baseline, request, now, free_time, route, recorder.places, deps)
     except Exception as err:  # one failing scenario must not stop the others or lose the report
         log.warning("scenario %s failed: %s", scenario.name, err)
         entry["error"] = f"{type(err).__name__}: {err}"
@@ -310,6 +344,11 @@ def summarize(results: list[dict]) -> dict:
     agent_ok = [r for r in ran if r["agent"]["source"] == "agent"]
     paired = [r for r in agent_ok if r.get("planner")]
     wanted = [r for r in paired if r["agent"]["matches_preference"] is not None]
+
+    def fit_share(side):
+        shares = [r[side]["matching_stops"] / r[side]["stop_count"] if r[side]["stop_count"] else 0 for r in wanted]
+        return round(100 * sum(shares) / len(shares)) if shares else None
+
     return {
         "scenarios_run": len(results),
         "errors": sum(1 for r in results if "error" in r),
@@ -321,6 +360,10 @@ def summarize(results: list[dict]) -> dict:
         "with_preference": len(wanted),
         "agent_matched": sum(1 for r in wanted if r["agent"]["matches_preference"]),
         "planner_matched": sum(1 for r in wanted if r["planner"]["matches_preference"]),
+        "agent_fit_share": fit_share("agent"),
+        "planner_fit_share": fit_share("planner"),
+        "agent_contradicting": sum(r["agent"]["avoided_stops"] or 0 for r in wanted),
+        "planner_contradicting": sum(r["planner"]["avoided_stops"] or 0 for r in wanted),
         "agent_avg_slack": mean([r["agent"].get("slack_minutes") for r in paired]),
         "planner_avg_slack": mean([r["planner"].get("slack_minutes") for r in paired]),
         "agent_avg_stops": mean([r["agent"]["stop_count"] for r in paired]),
@@ -333,10 +376,21 @@ def summarize(results: list[dict]) -> dict:
     }
 
 
+def scenario_names() -> list[str]:
+    return [scenario.name for scenario in SCENARIOS]
+
+
+def matching_scenarios(only=None, scenarios=None) -> list:
+    """The scenarios whose name contains `only` (case does not matter); all of them when `only` is empty."""
+    return [s for s in (SCENARIOS if scenarios is None else scenarios) if not only or only.lower() in s.name.lower()]
+
+
 def run_comparison(
     scenarios=None, max_usd=DEFAULT_MAX_USD, only=None, progress=lambda text: None, now=None, backends=None
 ) -> dict:
-    chosen = [s for s in (SCENARIOS if scenarios is None else scenarios) if not only or only.lower() in s.name.lower()]
+    chosen = matching_scenarios(only, scenarios)
+    if only and scenarios is None and not chosen:
+        raise ValueError(f"No scenario name contains '{only}'. Available: {', '.join(scenario_names())}")
     prices, assumed = prices_from_settings()
     spend = Spend(max_usd, prices, assumed)
     results, skipped = [], []
@@ -352,6 +406,7 @@ def run_comparison(
         "model": agent._model(),
         "effort": agent._effort() or "default",
         "max_usd": max_usd,
+        "only": only or None,
         "spent_usd": round(spend.usd, 4),
         "prices_assumed": assumed,
         "results": results,
@@ -378,6 +433,14 @@ def _yes_no(value) -> str:
     return "n/a" if value is None else ("yes" if value else "no")
 
 
+def _fit_text(side) -> str:
+    if not side:
+        return "-"
+    if side.get("matching_stops") is None:
+        return "n/a"
+    return f"{side['matching_stops']} of {side['stop_count']} fit, {side['avoided_stops']} contradict"
+
+
 def _fmt(value, suffix="") -> str:
     return "-" if value is None else f"{value}{suffix}"
 
@@ -389,9 +452,11 @@ def render_markdown(report: dict) -> str:
         "# Leeway: AI agent vs rule-based planner",
         "",
         f"Generated {report['generated']} | model `{report['model']}` | effort `{report['effort']}` | "
-        f"cap ${report['max_usd']:.2f} | spent about ${report['spent_usd']:.2f} (estimate; Claude prices {prices})",
+        f"cap ${report['max_usd']:.2f} | spent about ${report['spent_usd']:.2f} (estimate; Claude prices {prices})"
+        + (f" | only scenarios containing \"{report['only']}\"" if report.get("only") else ""),
         "",
-        "Both planners chose from the same places, the ones the agent found. The planner ignores the preference text. "
+        "Both planners chose from the same places, the ones the agent found, and both plans are checked by the same rules "
+        "(detour, opening hours, deadline). The planner ignores the preference text. "
         "One run per scenario: language models vary between runs, so read small differences with care.",
         "",
         "## Summary",
@@ -403,7 +468,9 @@ def render_markdown(report: dict) -> str:
         "| | AI agent | Planner |",
         "|---|---|---|",
         f"| Passed every check | {s['agent_valid']}/{s['compared']} | {s['planner_valid']}/{s['compared']} |",
-        f"| Matched the stated preference | {s['agent_matched']}/{s['with_preference']} | {s['planner_matched']}/{s['with_preference']} |",
+        f"| Matched the stated preference (something fits, nothing contradicts it) | {s['agent_matched']}/{s['with_preference']} | {s['planner_matched']}/{s['with_preference']} |",
+        f"| Share of stops that fit the preference | {_fmt(s['agent_fit_share'], '%')} | {_fmt(s['planner_fit_share'], '%')} |",
+        f"| Stops that contradict the preference | {s['agent_contradicting']} | {s['planner_contradicting']} |",
         f"| Average spare minutes at arrival (wanted: up to 40) | {_fmt(s['agent_avg_slack'])} | {_fmt(s['planner_avg_slack'])} |",
         f"| Average number of stops | {_fmt(s['agent_avg_stops'])} | {_fmt(s['planner_avg_stops'])} |",
         f"| Average rating of the stops | {_fmt(s['agent_avg_rating'])} | {_fmt(s['planner_avg_rating'])} |",
@@ -438,6 +505,7 @@ def render_markdown(report: dict) -> str:
             f"| Spare minutes at arrival | {_fmt(agent_side.get('slack_minutes'))} | {_fmt(planner_side.get('slack_minutes') if planner_side else None)} |",
             f"| Extra driving (min) | {_fmt(agent_side.get('extra_drive_minutes'))} | {_fmt(planner_side.get('extra_drive_minutes') if planner_side else None)} |",
             f"| Matched the preference | {_yes_no(agent_side['matches_preference'])} | {_yes_no(planner_side['matches_preference'] if planner_side else None)} |",
+            f"| Stops that fit or contradict it | {_fit_text(agent_side)} | {_fit_text(planner_side)} |",
             f"| Problems | {'; '.join(agent_side['problems']) or 'none'}{note} | {('; '.join(planner_side['problems']) or 'none') if planner_side else '-'} |",
             "",
         ]

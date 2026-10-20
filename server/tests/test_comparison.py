@@ -333,6 +333,41 @@ class RunComparisonTests(unittest.TestCase):
         self.assertLessEqual(summary["planner_matched"], summary["with_preference"])
 
 
+class ScenarioFilterTests(unittest.TestCase):
+    def test_the_filter_ignores_case_and_matches_part_of_a_name(self):
+        self.assertEqual([s.name for s in comparison.matching_scenarios("KIDS")], ["with kids"])
+        self.assertEqual([s.name for s in comparison.matching_scenarios("quiet")], ["quiet coffee"])
+
+    def test_an_empty_filter_matches_everything(self):
+        self.assertEqual(len(comparison.matching_scenarios("")), len(comparison.SCENARIOS))
+        self.assertEqual(len(comparison.matching_scenarios(None)), len(comparison.SCENARIOS))
+
+    def test_a_filter_that_matches_nothing_is_an_error_that_names_the_choices(self):
+        with self.assertRaises(ValueError) as caught:
+            comparison.run_comparison(only="zzz", backends=backends())
+        self.assertIn("No scenario name contains 'zzz'", str(caught.exception))
+        for name in comparison.scenario_names():
+            self.assertIn(name, str(caught.exception))
+
+    def test_a_bad_filter_spends_nothing(self):
+        calls = []
+        b = backends()
+        b["client"] = lambda: calls.append(1)
+        with self.assertRaises(ValueError):
+            comparison.run_comparison(only="zzz", backends=b)
+        self.assertEqual(calls, [])
+
+    def test_the_report_records_the_filter_and_says_so(self):
+        report = comparison.run_comparison(only="little", now=NOW, backends=backends())
+        self.assertEqual(report["only"], "little")
+        self.assertIn('only scenarios containing "little"', comparison.render_markdown(report))
+
+    def test_without_a_filter_the_report_says_nothing_about_one(self):
+        report = comparison.run_comparison([], now=NOW, backends=backends())
+        self.assertIsNone(report["only"])
+        self.assertNotIn("only scenarios containing", comparison.render_markdown(report))
+
+
 class MarkdownTests(unittest.TestCase):
     def report(self, **overrides):
         pool = iter([agent_picks(), agent_picks()])
