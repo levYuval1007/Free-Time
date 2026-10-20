@@ -5,6 +5,8 @@ so the model can read them and correct itself; nothing here raises for bad model
 """
 
 import json
+import logging
+import time
 from datetime import timedelta
 
 import geo
@@ -12,6 +14,8 @@ import ors
 import planner
 import places
 import validator
+
+log = logging.getLogger("tools")
 
 MAX_SEARCHES = 3
 MAX_TRAVEL_CALLS = 4
@@ -123,6 +127,23 @@ def _number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def describe_call(name, args):
+    """A one-line summary of a tool call for the logs. It leaves out coordinates and free text from the user."""
+    if not isinstance(args, dict):
+        return str(name)
+    if name == "search_along_route":
+        return f"search_along_route(query={_text(args.get('query'), MAX_QUERY_CHARS)!r})"
+    if name == "search_places":
+        return f"search_places(radius_m={args.get('radius_m')}, types={args.get('types')})"
+    if name == "get_travel_time":
+        nodes = args.get("nodes")
+        return f"get_travel_time(nodes={len(nodes) if isinstance(nodes, list) else '?'})"
+    if name == "submit_itinerary":
+        stops = args.get("stops")
+        return f"submit_itinerary(stops={len(stops) if isinstance(stops, list) else '?'})"
+    return str(name)
+
+
 def _text(value, limit):
     return " ".join(str(value).split())[:limit] if isinstance(value, str) else ""
 
@@ -156,12 +177,18 @@ class ToolBox:
             return f"Unknown tool {name}", True
         if not isinstance(arguments, dict):
             return "Tool arguments must be an object", True
+        started = time.perf_counter()
         try:
-            return handler(arguments)
+            text, is_error = handler(arguments)
         except places.PlacesError as err:
-            return f"The places service failed: {err}", True
+            text, is_error = f"The places service failed: {err}", True
         except ors.RouteError as err:
-            return f"The routing service failed: {err}", True
+            text, is_error = f"The routing service failed: {err}", True
+        log.info(
+            "tool %s ok=%s ms=%d%s",
+            name, not is_error, (time.perf_counter() - started) * 1000, f" error={text[:300]!r}" if is_error else "",
+        )
+        return text, is_error
 
     def _search_places(self, args):
         lat, lon, radius = args.get("lat"), args.get("lon"), args.get("radius_m")
@@ -182,7 +209,9 @@ class ToolBox:
             return f"The search limit ({MAX_SEARCHES}) is used up. Work with the places you already have.", True
         self.searches += 1
 
-        found = planner.select_candidates(self._search_nearby(lat, lon, int(radius), types))
+        raw = self._search_nearby(lat, lon, int(radius), types)
+        found = planner.select_candidates(raw)
+        log.info("search_places google=%d quality_ok=%d", len(raw), len(found))
         return self._remember(found[:MAX_RESULTS]), False
 
     def _remember(self, found):
@@ -197,6 +226,7 @@ class ToolBox:
         if register:
             register([(place["lon"], place["lat"]) for place in found])
         timing = self._timing(found)
+        log.info("detour check places=%d shown=%d hidden=%d", len(found), len(timing), len(found) - len(timing))
         return json.dumps([self._describe(place, timing[place["id"]]) for place in found if place["id"] in timing])
 
     def _timing(self, found):
@@ -232,11 +262,13 @@ class ToolBox:
 
         if self._polyline is None:
             self._polyline = geo.encode_polyline(geo.thin(self.ctx.route, MAX_POLYLINE_POINTS))
-        found = planner.select_candidates(self._search_along_route(self._polyline, query))
+        raw = self._search_along_route(self._polyline, query)
+        found = planner.select_candidates(raw)
         near = [
             place for place in found
             if geo.distance_to_route_km(place["lat"], place["lon"], self.ctx.route) <= MAX_ROUTE_DISTANCE_KM
         ]
+        log.info("search_along_route google=%d quality_ok=%d near_route=%d", len(raw), len(found), len(near))
         return self._remember(near[:MAX_RESULTS]), False
 
     def _describe(self, place, timing):
@@ -300,6 +332,7 @@ class ToolBox:
         self.submissions += 1
         stops = args.get("stops")
         result, errors = validator.validate_itinerary(self.ctx, stops, self._travel_matrix)
+        log.info("submit stops=%s accepted=%s", len(stops) if isinstance(stops, list) else "?", not errors)
         if errors:
             left = MAX_SUBMISSIONS - self.submissions
             tail = f" You can submit {left} more time(s)." if left else " No submissions left."

@@ -14,12 +14,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import budget
 import jobs
+import jobtrace  # noqa: F401  (tags log lines with the job id)
 import limits
 import ors
 import places
 import planning
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s [%(job)s] %(message)s")
 log = logging.getLogger("server")
 logging.getLogger("uvicorn.access").addFilter(limits.RedactQueryFilter())
 

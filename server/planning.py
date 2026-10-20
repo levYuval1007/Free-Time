@@ -91,6 +91,10 @@ def _format_plan(free_time, chosen, now, considered, request: PlanRequest, deps:
     }
     if summary:
         result["summary"] = summary
+    log.info(
+        "plan source=%s stops=%s arrive=%s considered=%d",
+        source, [(s["name"], s["visit_minutes"]) for s in stops], result["arrive_destination"], considered,
+    )
     return result
 
 

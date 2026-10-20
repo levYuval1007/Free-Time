@@ -129,6 +129,7 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
             outcome.reason = "token_budget"
             break
         outcome.rounds = round_number
+        started = time.perf_counter()
         try:
             response = client.messages.create(
                 model=model, max_tokens=MAX_TOKENS, system=system, tools=tools, messages=messages
@@ -138,6 +139,14 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
             outcome.reason = "llm_unavailable"
             break
         _usage_add(outcome.usage, getattr(response, "usage", None))
+        round_usage = getattr(response, "usage", None)
+        log.info(
+            "round=%d stop=%s ms=%d in=%d out=%d cache_read=%d calls=[%s]",
+            round_number, response.stop_reason, (time.perf_counter() - started) * 1000,
+            getattr(round_usage, "input_tokens", 0) or 0, getattr(round_usage, "output_tokens", 0) or 0,
+            getattr(round_usage, "cache_read_input_tokens", 0) or 0,
+            ", ".join(agent_tools.describe_call(b.name, b.input) for b in response.content if b.type == "tool_use") or "none",
+        )
 
         if response.stop_reason == "refusal":
             outcome.reason = "refused"

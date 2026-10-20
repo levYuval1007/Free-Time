@@ -51,7 +51,7 @@ class SelectCandidatesTests(unittest.TestCase):
         self.assertEqual([p["id"] for p in planner.select_candidates([place("a")])], ["a"])
 
     def test_drops_low_rating_and_few_reviews(self):
-        found = planner.select_candidates([place("low", rating=3.9), place("few", count=99), place("ok")])
+        found = planner.select_candidates([place("low", rating=3.5), place("few", count=14), place("ok")])
         self.assertEqual([p["id"] for p in found], ["ok"])
 
     def test_drops_unknown_hours(self):

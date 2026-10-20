@@ -5,8 +5,8 @@ import hours
 
 MAX_STOPS = 3
 MAX_CANDIDATES = 40
-MIN_RATING = 4.0
-MIN_RATING_COUNT = 100
+MIN_RATING = 3.6
+MIN_RATING_COUNT = 15  # few reviews rank low anyway: see quality()
 CLOSING_MARGIN_MINUTES = 15
 DEFAULT_VISIT_MINUTES = 45
 EXCLUDED_TYPES = {"bar", "beer_garden", "night_club", "casino", "liquor_store"}

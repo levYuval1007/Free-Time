@@ -10,6 +10,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+import jobtrace
 import ors
 import places
 
@@ -129,7 +130,14 @@ class JobRunner:
 
     def submit(self, job_id: str, work):
         """work(progress) returns an object with status, result and degraded_reason (see planning.PlanOutcome)."""
-        self._pool.submit(self._run, job_id, work)
+        self._pool.submit(self._run_traced, job_id, work)
+
+    def _run_traced(self, job_id: str, work):
+        token = jobtrace.current_job.set(job_id)
+        try:
+            self._run(job_id, work)
+        finally:
+            jobtrace.current_job.reset(token)
 
     def _run(self, job_id: str, work):
         store = self._store

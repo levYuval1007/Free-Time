@@ -32,6 +32,7 @@ _client = PooledClient(API_HOST)
 
 
 def _call(method, path, body=None, headers=None):
+    started = time.perf_counter()
     try:
         status, raw = _client.request(method, path, body, headers)
     except TransportError as err:
@@ -42,6 +43,7 @@ def _call(method, path, body=None, headers=None):
         if status == 429 or (status == 403 and "quota" in detail.lower()):
             raise QuotaExceeded("The routing service has reached its usage limit. Please try again later.")
         raise RouteError(f"The routing service returned an error ({status}).")
+    log.info("%s %s ms=%d", method, path.split("?")[0], (time.perf_counter() - started) * 1000)
     return json.loads(raw)
 
 
@@ -80,6 +82,7 @@ def matrix(points):
         body,
         {"Authorization": _key(), "Content-Type": "application/json"},
     )
+    log.info("matrix points=%d", len(points))
     return [[None if seconds is None else seconds / 60 for seconds in row] for row in data["durations"]]
 
 
@@ -97,6 +100,7 @@ def route_coords(start_lon, start_lat, end_lon, end_lat):
     with lock:
         hit = _route_cache.get(key)
         if hit and hit[0] > time.monotonic():
+            log.info("direct route served from the cache")
             return dict(hit[1])
         result = route_through([(start_lon, start_lat), (end_lon, end_lat)])
         now = time.monotonic()
@@ -118,6 +122,7 @@ def route_through(points):
     )
     feature = data["features"][0]
     summary = feature["properties"]["summary"]
+    log.info("directions points=%d km=%.1f minutes=%.0f", len(points), summary["distance"] / 1000, summary["duration"] / 60)
     steps = [step for segment in feature["properties"]["segments"] for step in segment["steps"]]
     return {
         "km": round(summary["distance"] / 1000, 1),
