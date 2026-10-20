@@ -90,7 +90,7 @@ class LoopTests(unittest.TestCase):
         results = second[2]["content"]
         self.assertEqual([r["tool_use_id"] for r in results], ["t1", "t2"])
         self.assertTrue(all(r["type"] == "tool_result" and r["is_error"] is False for r in results))
-        self.assertEqual([b["type"] for b in second[1]["content"]], ["tool_use", "tool_use"])
+        self.assertEqual([b.type for b in second[1]["content"]], ["tool_use", "tool_use"])
 
     def test_rejected_plan_is_reported_and_can_be_fixed(self):
         claude = FakeClaude(

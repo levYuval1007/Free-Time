@@ -102,12 +102,15 @@ def _usage_add(total, usage):
     total["cache_write_tokens"] += getattr(usage, "cache_creation_input_tokens", 0) or 0
 
 
-def _block_to_dict(block):
-    if block.type == "text":
-        return {"type": "text", "text": block.text}
-    if block.type == "tool_use":
-        return {"type": "tool_use", "id": block.id, "name": block.name, "input": block.input}
-    return None
+def _describe_blocks(content):
+    """The kinds of blocks in a reply for the logs: where the output tokens went, without the text itself."""
+    parts = []
+    for block in content:
+        if block.type == "text":
+            parts.append(f"text:{len(block.text or '')}")
+        else:
+            parts.append(block.type)
+    return ", ".join(parts) or "none"
 
 
 def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_progress=None, deadline=None, token_budget=JOB_TOKEN_BUDGET) -> AgentOutcome:
@@ -141,10 +144,10 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
         _usage_add(outcome.usage, getattr(response, "usage", None))
         round_usage = getattr(response, "usage", None)
         log.info(
-            "round=%d stop=%s ms=%d in=%d out=%d cache_read=%d calls=[%s]",
+            "round=%d stop=%s ms=%d in=%d out=%d cache_read=%d blocks=[%s] calls=[%s]",
             round_number, response.stop_reason, (time.perf_counter() - started) * 1000,
             getattr(round_usage, "input_tokens", 0) or 0, getattr(round_usage, "output_tokens", 0) or 0,
-            getattr(round_usage, "cache_read_input_tokens", 0) or 0,
+            getattr(round_usage, "cache_read_input_tokens", 0) or 0, _describe_blocks(response.content),
             ", ".join(agent_tools.describe_call(b.name, b.input) for b in response.content if b.type == "tool_use") or "none",
         )
 
@@ -155,8 +158,9 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=MODEL, on_pr
             outcome.reason = "too_long"
             break
 
-        content = [d for d in map(_block_to_dict, response.content) if d]
-        messages.append({"role": "assistant", "content": content})
+        # The reply goes back exactly as received, thinking blocks included: the model reads its own reasoning from
+        # earlier rounds instead of redoing it, and a history that was edited can be rejected by newer models.
+        messages.append({"role": "assistant", "content": list(response.content)})
         calls = [block for block in response.content if block.type == "tool_use"]
         if response.stop_reason != "tool_use" or not calls:
             outcome.reason = "no_itinerary_submitted"
