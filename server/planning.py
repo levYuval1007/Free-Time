@@ -60,6 +60,7 @@ class PlanOutcome:
     status: str  # "succeeded" or "degraded"
     result: dict
     degraded_reason: str | None = None
+    stats: dict | None = None  # rounds, searches and tokens of the agent run, for logs and evals
 
 
 def _format_plan(free_time, chosen, now, considered, request: PlanRequest, deps: Deps, source, summary=None):
@@ -173,14 +174,15 @@ def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, n
         )
 
     deps.record_usage(outcome.usage)
+    stats = {"rounds": outcome.rounds, "searches": outcome.searches, "tokens": limits.total_tokens(outcome.usage)}
     log.info(limits.cost_line(outcome.usage, outcome.searches, outcome.rounds))
     if outcome.status == "ok":
         result = _format_plan(
             free_time, outcome.itinerary, now, len(outcome.known_places), request, deps, "agent",
             summary=outcome.itinerary.get("summary"),
         )
-        return PlanOutcome("succeeded", result)
+        return PlanOutcome("succeeded", result, stats=stats)
 
     progress("Using the basic planner")
     log.info("agent failed (%s); using the rule-based planner", outcome.reason)
-    return PlanOutcome("degraded", baseline_plan(request, free_time, now, deps, outcome.known_places), outcome.reason)
+    return PlanOutcome("degraded", baseline_plan(request, free_time, now, deps, outcome.known_places), outcome.reason, stats)

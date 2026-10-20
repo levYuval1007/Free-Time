@@ -66,7 +66,7 @@ TOOLS = [
             "destination, for example 'park', 'scenic viewpoint', 'bakery' or 'waterfall'. Use it when the best "
             "stops may be in the middle of the trip and not near either end. Returns up to 20 places with id, name, "
             "type, rating, coordinates, today's opening hours and km_from_route (straight-line distance from the "
-            "road). Only places returned by a search can be used in the itinerary."
+            "road), detour_minutes (extra driving compared with going straight) and minutes_from_start. Only places returned by a search can be used in the itinerary."
         ),
         "input_schema": {
             "type": "object",
@@ -186,13 +186,39 @@ class ToolBox:
         return self._remember(found[:MAX_RESULTS]), False
 
     def _remember(self, found):
-        """Keep what a search found so later steps can use it, and describe it for the model."""
+        """Keep what a search found so later steps can use it, and describe it for the model.
+
+        Places that would add more than the allowed detour are not shown to the model. They stay in
+        known_places, so the basic planner can still use them if the agent fails.
+        """
         for place in found:
             self.ctx.known_places[place["id"]] = place
         register = getattr(self._travel_matrix, "register", None)
         if register:
             register([(place["lon"], place["lat"]) for place in found])
-        return json.dumps([self._describe(place) for place in found])
+        timing = self._timing(found)
+        return json.dumps([self._describe(place, timing[place["id"]]) for place in found if place["id"] in timing])
+
+    def _timing(self, found):
+        """Detour and drive time for each place, from one routing request that also answers later questions.
+
+        detour is the extra driving compared with going straight to the destination.
+        """
+        if not found:
+            return {}
+        points = [self.ctx.origin, self.ctx.destination, *[(place["lon"], place["lat"]) for place in found]]
+        grid = self._travel_matrix(points)
+        direct = grid[0][1]
+        timing = {}
+        for index, place in enumerate(found, start=2):
+            out, back = grid[0][index], grid[index][1]
+            if direct is None or out is None or back is None:
+                continue
+            detour = out + back - direct
+            if detour > validator.MAX_DETOUR_MINUTES:
+                continue
+            timing[place["id"]] = {"detour_minutes": max(0, round(detour)), "minutes_from_start": round(out)}
+        return timing
 
     def _search_along_route_tool(self, args):
         query = _text(args.get("query"), MAX_QUERY_CHARS)
@@ -213,7 +239,7 @@ class ToolBox:
         ]
         return self._remember(near[:MAX_RESULTS]), False
 
-    def _describe(self, place):
+    def _describe(self, place, timing):
         weekday = self._local_weekday(place)
         hours_text = place.get("weekday_text")
         off_route = geo.distance_to_route_km(place["lat"], place["lon"], self.ctx.route)
@@ -227,6 +253,7 @@ class ToolBox:
             "lon": place["lon"],
             "hours_today": hours_text[weekday] if hours_text and len(hours_text) == 7 else None,
             "typical_visit_minutes": planner.visit_minutes(place),
+            **timing,
         }
         if off_route is not None:
             described["km_from_route"] = round(off_route, 1)

@@ -127,6 +127,7 @@ def main():
         print(
             f"{scenario.name:<18} {status}  {outcome.status:<9} source={source:<8} "
             f"stops={len(outcome.result.get('stops', []))} tokens={tokens} {seconds:.0f}s"
+            + (" rounds={rounds} searches={searches}".format(**outcome.stats) if outcome.stats else "")
             + (f" degraded={outcome.degraded_reason}" if outcome.degraded_reason else "")
         )
         for problem in problems:

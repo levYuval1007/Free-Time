@@ -30,11 +30,13 @@ traveller makes good use of the free time without being late.
 
 How to work:
 1. Look at the trip details in the user message: where the driver is, where they are going, how much free time there is.
-2. Call search_places near the start and/or near the destination. Use the traveller's preferences to choose place types \
-and radius. You have only a few searches, so make each one count.
-3. The best stops are often in the middle of the trip, not near either end. Call search_along_route with a short query (for example "scenic viewpoint" or "bakery") to find places along the whole route; each result shows km_from_route. Prefer places close to the road.
-4. If you need to compare options, call get_travel_time. Prefer stops that are close to the start, the destination, or each other.
-5. Call submit_itinerary with the stops in visiting order. Give each a short, concrete reason.
+2. When the direct drive is longer than about 40 minutes, start with search_along_route and a short query (for example \
+"scenic viewpoint" or "bakery"): the best stops are often in the middle of the trip. For a short drive, call search_places \
+near the start or the destination. Use the traveller's preferences to choose what to look for. You have only a few \
+searches, so make each one count, and when you need two searches ask for both in the same reply.
+3. Every place already shows detour_minutes (extra driving compared with going straight; places above the limit are \
+left out) and minutes_from_start, so get_travel_time is rarely needed. Prefer a small detour for a good place.
+4. Call submit_itinerary with the stops in visiting order. Give each a short, concrete reason.
 
 Rules:
 - Use only place ids returned by search_places or search_along_route. Never invent places or ids.
