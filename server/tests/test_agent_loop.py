@@ -145,7 +145,7 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(call["model"], "claude-sonnet-5")
         self.assertEqual(call["system"][0]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(call["tools"][-1]["cache_control"], {"type": "ephemeral"})
-        self.assertEqual([t["name"] for t in call["tools"]], ["search_places", "get_travel_time", "submit_itinerary"])
+        self.assertEqual([t["name"] for t in call["tools"]], ["search_places", "search_along_route", "get_travel_time", "submit_itinerary"])
         # The shared tool definitions are not modified by adding the cache marker.
         self.assertNotIn("cache_control", agent_tools.TOOLS[-1])
 

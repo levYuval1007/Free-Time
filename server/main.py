@@ -205,7 +205,7 @@ def plan(
     request = planning.PlanRequest(origin=(from_lon, from_lat), destination=(to_lon, to_lat), arrive_by=arrive, radius=radius)
     deps = planning.Deps()
     now = datetime.now(timezone.utc)
-    _, free_time = planning.compute_free_time(request, now, deps)
+    _, free_time, _ = planning.compute_free_time(request, now, deps)
     if free_time["status"] != "ok":
         reason = "impossible" if free_time["status"] == "impossible" else "not_enough_time"
         return {"budget": free_time, "stops": [], "reason": reason}

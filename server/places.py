@@ -12,6 +12,7 @@ log = logging.getLogger("places")
 
 HOST = "places.googleapis.com"
 SEARCH_NEARBY_PATH = "/v1/places:searchNearby"
+SEARCH_TEXT_PATH = "/v1/places:searchText"
 AUTOCOMPLETE_PATH = "/v1/places:autocomplete"
 DETAILS_PATH = "/v1/places/"
 MAX_RADIUS_M = 50000
@@ -48,6 +49,7 @@ DETAILS_FIELD_MASK = "location,formattedAddress"
 # Estimated USD per request beyond the free monthly caps. Autocomplete inside a session is billed
 # through the Place Details call that ends it.
 COST_NEARBY_ENTERPRISE = 0.035
+COST_TEXT_SEARCH_ENTERPRISE = 0.035  # from the pricing page; whether route searches bill differently is not documented
 COST_DETAILS_ESSENTIALS = 0.005
 COST_AUTOCOMPLETE_IN_SESSION = 0.0
 
@@ -165,6 +167,26 @@ def search_nearby(lat, lon, radius_m, types=None, max_results=20):
     )
     found = [p for p in map(normalize_place, data.get("places", [])) if p]
     log.info("searchNearby results=%d", len(found))
+    return found
+
+
+def search_along_route(encoded_polyline, query, max_results=20):
+    """Places matching a text query (for example "park" or "scenic viewpoint") near a driving route.
+
+    encoded_polyline is the route in Google's encoded polyline format. Google documents that results are
+    places with small detours, and does not document a limit on the polyline size, so callers keep it short.
+    """
+    body = json.dumps(
+        {
+            "textQuery": query,
+            "pageSize": max_results,
+            "languageCode": "en",
+            "searchAlongRouteParameters": {"polyline": {"encodedPolyline": encoded_polyline}},
+        }
+    ).encode()
+    data = _request("searchAlongRoute", "POST", SEARCH_TEXT_PATH, body, FIELD_MASK, COST_TEXT_SEARCH_ENTERPRISE)
+    found = [p for p in map(normalize_place, data.get("places", [])) if p]
+    log.info("searchAlongRoute results=%d", len(found))
     return found
 
 

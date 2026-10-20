@@ -24,6 +24,7 @@ log = logging.getLogger("planning")
 JOB_BUDGET_S = 75  # no new model request starts after this
 STAGE_TEXT = {
     "search_places": "Searching for places",
+    "search_along_route": "Searching along your route",
     "get_travel_time": "Checking drive times",
     "submit_itinerary": "Checking the plan",
 }
@@ -43,6 +44,7 @@ class PlanRequest:
 @dataclass
 class Deps:
     search_nearby: Callable = places.search_nearby
+    search_along_route: Callable = places.search_along_route
     travel_matrix: Callable = ors.matrix
     direct_route: Callable = ors.route_coords
     route_through: Callable = ors.route_through
@@ -126,7 +128,8 @@ def compute_free_time(request: PlanRequest, now, deps: Deps):
     # The page asks for this same route, and the answers are shared, so this costs no extra routing call.
     direct = deps.direct_route(request.origin[0], request.origin[1], request.destination[0], request.destination[1])
     direct_minutes = math.ceil(direct["minutes"])
-    return direct_minutes, budget.plan_budget(request.arrive_by, now, direct_minutes)
+    free_time = budget.plan_budget(request.arrive_by, now, direct_minutes)
+    return direct_minutes, free_time, [tuple(point) for point in direct.get("geometry", [])]
 
 
 def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, now=None, deps: Deps | None = None) -> PlanOutcome:
@@ -134,7 +137,7 @@ def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, n
     deps = deps or Deps()
     now = now or datetime.now(timezone.utc)
     progress("Checking your route")
-    direct_minutes, free_time = compute_free_time(request, now, deps)
+    direct_minutes, free_time, route = compute_free_time(request, now, deps)
     if free_time["status"] != "ok":
         reason = "impossible" if free_time["status"] == "impossible" else "not_enough_time"
         return PlanOutcome("succeeded", {"budget": free_time, "stops": [], "reason": reason, "source": "baseline"})
@@ -148,11 +151,11 @@ def execute_plan(request: PlanRequest, progress: Callable = lambda text: None, n
 
     ctx = validator.TripContext(
         now=now, arrive_by=request.arrive_by, buffer_minutes=free_time["buffer_minutes"],
-        origin=request.origin, destination=request.destination,
+        origin=request.origin, destination=request.destination, route=route,
     )
     times = travel.TravelTimes(deps.travel_matrix)
     times.register([request.origin, request.destination])
-    box = agent_tools.ToolBox(ctx, deps.search_nearby, times)
+    box = agent_tools.ToolBox(ctx, deps.search_nearby, times, deps.search_along_route)
     message = agent.build_user_message(
         ctx, free_time, direct_minutes, request.preferences, request.origin_label, request.destination_label
     )

@@ -232,7 +232,7 @@ class ToolBoxTests(unittest.TestCase):
 
     def test_tool_definitions_match_the_handlers(self):
         names = [tool["name"] for tool in agent_tools.TOOLS]
-        self.assertEqual(names, ["search_places", "get_travel_time", "submit_itinerary"])
+        self.assertEqual(names, ["search_places", "search_along_route", "get_travel_time", "submit_itinerary"])
         for tool in agent_tools.TOOLS:
             self.assertEqual(tool["input_schema"]["type"], "object")
 

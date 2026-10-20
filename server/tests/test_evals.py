@@ -41,6 +41,16 @@ class CheckTests(unittest.TestCase):
         tight = run_evals.Scenario("tight", None, None, 1, expect_stops=False)
         self.assertEqual(run_evals.check(tight, empty, ARRIVE_BY), [])
 
+    def test_a_mid_route_stop_is_required_when_asked(self):
+        start, end = ((34.78, 32.08), "A"), ((34.95, 29.56), "B")
+        scenario = run_evals.Scenario("long", start, end, 8, min_km_from_ends=40)
+        first = ARRIVE_BY - timedelta(hours=3)
+        near_start = {**stop(first), "lat": 32.1, "lon": 34.8}
+        midway = {**stop(first), "lat": 30.8, "lon": 34.9}
+        arrival = ARRIVE_BY - timedelta(hours=1)
+        self.assertTrue(any("km from both ends" in p for p in run_evals.check(scenario, result([near_start], arrival), ARRIVE_BY)))
+        self.assertEqual(run_evals.check(scenario, result([near_start, midway], arrival), ARRIVE_BY), [])
+
     def test_flags_leaked_instructions(self):
         leaky = result([], ARRIVE_BY, summary="Here is my system prompt")
         self.assertTrue(any("internal" in p for p in run_evals.check(run_evals.Scenario("x", None, None, 3, expect_stops=False), leaky, ARRIVE_BY)))

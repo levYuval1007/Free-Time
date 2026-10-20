@@ -9,6 +9,9 @@ import planner
 
 MIN_VISIT_MINUTES = 20
 MAX_VISIT_MINUTES = 180
+# Extra driving a stop may add compared with going straight to the destination: about 10 minutes out of the
+# way and 10 minutes back to the road.
+MAX_DETOUR_MINUTES = 20
 
 
 @dataclass
@@ -20,6 +23,8 @@ class TripContext:
     destination: tuple  # (lon, lat)
     # Places returned by searches during this run, by id. The agent may only pick from these.
     known_places: dict = field(default_factory=dict)
+    # The direct driving route as (lon, lat) points, used to find places along the way.
+    route: list = field(default_factory=list)
 
     @property
     def latest_arrival(self):
@@ -81,9 +86,17 @@ def validate_itinerary(ctx: TripContext, proposed, travel_matrix):
     grid = travel_matrix(points)
     last = len(points) - 1
 
+    direct = grid[0][last]
     clock = ctx.now
     stops = []
     for index, (place, visit) in enumerate(places, start=1):
+        if direct is not None and grid[0][index] is not None and grid[index][last] is not None:
+            detour = grid[0][index] + grid[index][last] - direct
+            if detour > MAX_DETOUR_MINUTES:
+                errors.append(
+                    f"'{place['name']}' adds about {round(detour)} minutes of driving compared with going "
+                    f"straight to the destination; the limit is {MAX_DETOUR_MINUTES}"
+                )
         drive = grid[index - 1][index]
         if drive is None:
             errors.append(f"there is no driving route to '{place['name']}'")
