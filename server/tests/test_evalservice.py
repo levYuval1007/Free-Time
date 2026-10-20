@@ -126,7 +126,7 @@ class EvalRunnerTests(unittest.TestCase):
         self.assertIsNone(runner.markdown("eval-nope"))
         self.assertNotIn("report", runner.view(run_id, with_report=False))
 
-    def test_recent_lists_newest_first_and_old_runs_are_dropped(self):
+    def test_recent_lists_newest_first_and_old_runs_leave_memory_but_stay_readable(self):
         runner = self.runner()
         ids = []
         for _ in range(evalservice.KEEP_RUNS + 2):
@@ -135,8 +135,9 @@ class EvalRunnerTests(unittest.TestCase):
             ids.append(run_id)
         recent = runner.recent()
         self.assertEqual(recent[0]["id"], ids[-1])
-        self.assertLessEqual(len(recent), evalservice.KEEP_RUNS + 1)
-        self.assertIsNone(runner.view(ids[0]))
+        self.assertEqual(sorted(run["id"] for run in recent), sorted(ids))  # the saved ones are listed too
+        self.assertNotIn(ids[0], runner._runs)  # dropped from memory...
+        self.assertEqual(runner.view(ids[0])["status"], "done")  # ...but read back from the store
 
     def test_the_run_id_is_safe_to_use_as_a_file_name(self):
         runner = self.runner()

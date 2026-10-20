@@ -8,11 +8,12 @@ from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import adminpage
 import budget
 import config
 import evalservice
@@ -289,6 +290,14 @@ def _require_admin(authorization: str | None):
         raise HTTPException(401, "Unauthorized")
 
 
+@app.get("/admin/evals", include_in_schema=False)
+def admin_evals_page():
+    """The page itself holds nothing secret, but like the endpoints it does not exist unless ADMIN_TOKEN is set."""
+    if not config.get("ADMIN_TOKEN"):
+        raise HTTPException(404, "Not found")
+    return HTMLResponse(adminpage.HTML, headers=adminpage.SECURITY_HEADERS)
+
+
 @app.post("/api/admin/evals", status_code=202)
 def start_eval(body: EvalStartRequest, authorization: str | None = Header(default=None)):
     _require_admin(authorization)
@@ -302,7 +311,14 @@ def start_eval(body: EvalStartRequest, authorization: str | None = Header(defaul
 @app.get("/api/admin/evals")
 def list_evals(authorization: str | None = Header(default=None)):
     _require_admin(authorization)
-    return {"runs": evalservice.runner.recent()}
+    return {"runs": evalservice.runner.recent(), "storage": evalservice.runner.storage_kind}
+
+
+@app.get("/api/admin/storage")
+def eval_storage(authorization: str | None = Header(default=None)):
+    """Whether the place where reports are saved works (a database round trip when one is configured)."""
+    _require_admin(authorization)
+    return evalservice.runner.storage_check()
 
 
 @app.get("/api/admin/evals/{run_id}")

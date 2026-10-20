@@ -80,7 +80,8 @@ server/                 FastAPI backend (Python)
   tests/                unit tests, all offline (see tests/CLAUDE.md)
   comparison.py         AI agent vs planner on fixed trips, inside a spending cap, and its report
   evalservice.py        runs a comparison in the background of the server (admin endpoint)
-  reportstore.py        where finished comparison reports are saved
+  reportstore.py        where finished comparison reports are saved: Postgres, or files
+  adminpage.py          the small page to start a comparison and read the report
   evals/run_evals.py    command line for the comparison (costs money)
   travel_time.py        small legacy command line tool: two places, one drive time
 client/                 React 18 + TypeScript + Vite 5
@@ -113,6 +114,7 @@ $env:GOOGLE_MAPS_API_KEY = "your-key"
 |---|---|---|
 | `AGENT_MODEL` | `claude-sonnet-5` | Claude model for the planning agent. If a model is unavailable or rejects a setting, the plan falls back to the basic planner |
 | `AGENT_EFFORT` | the model's default | How hard the model thinks: `low`, `medium`, `high`, `xhigh` or `max`. Not every model accepts it |
+| `DATABASE_URL` | unset | Postgres connection string. When set, comparison reports are saved in the database and survive restarts (otherwise they are files). Keep it secret |
 | `ADMIN_TOKEN` | unset | Secret for the admin endpoints that run the comparison on the server. Unset means those endpoints do not exist |
 | `EVAL_RESULTS_DIR` | `server/evals/results` | Where comparison reports are saved. On a host whose disk is wiped on restart, point it at a persistent disk or read the report from the endpoint or the log |
 | `PLANS_PER_IP_PER_HOUR` | 8 | Plans one address may start per hour (then 429) |
@@ -196,7 +198,9 @@ Does the agent actually choose better than the rule-based planner? The compariso
 
 **Cost is capped in code.** `max_usd` defaults to $0.30 (the server accepts $0.05 to $1.00). A search is refused if it would pass the cap, a model call is refused if it could, and a scenario is skipped when too little is left. A scenario costs roughly 10 cents, so 30 cents is two or three scenarios (the order puts the most informative first, and the trip with no free time is always free). The figure is an estimate: Places at list price and Claude from `ANTHROPIC_PRICE_*`, or assumed list prices, which the report states.
 
-**On the server** (where the keys are). Set `ADMIN_TOKEN` to a long random secret in the service's environment (without it the endpoints return 404), then, in PowerShell:
+**On the server** (where the keys are). Set `ADMIN_TOKEN` to a long random secret in the service's environment (without it the page and the endpoints do not exist and answer 404). Then open `https://YOUR-APP.onrender.com/admin/evals`, type the token (it stays in the page and is never stored), choose a budget and press *Start comparison*. The list shows the progress; when a run says `done`, press *Show report* to read it or *Download as .md*. *Check storage* tests where reports are saved. (A free Render service sleeps after 15 minutes without traffic and takes about a minute to wake up, so the first load can be slow.)
+
+The same with PowerShell:
 
 ```powershell
 $h = @{ Authorization = "Bearer YOUR_ADMIN_TOKEN" }
@@ -207,7 +211,9 @@ $run.id
 (Invoke-WebRequest -Uri "https://YOUR-APP.onrender.com/api/admin/evals/$($run.id)?format=md" -Headers $h).Content
 ```
 
-`GET /api/admin/evals/{id}` returns the status, progress and the full report as JSON (`?format=md` for the readable version) and `GET /api/admin/evals` lists recent runs. Only one comparison runs at a time. Each finished report is saved as `<id>.md` and `<id>.json` in the results folder **and written to the log line by line** (search the log for `report |`). A free Render service wipes its disk on every restart, so the saved files are lost then; the log and the endpoint (while the process lives) are what to rely on, unless `EVAL_RESULTS_DIR` points at a persistent disk.
+`GET /api/admin/evals` lists the runs (and says where reports are saved), `GET /api/admin/evals/{id}` returns the status, progress and full report as JSON (`?format=md` for the readable version), and `GET /api/admin/storage` checks the storage. Only one comparison runs at a time.
+
+**Where reports are kept.** Every finished report is saved as `<id>.md` and `<id>.json` and also written to the log line by line (search the log for `report |`). With `DATABASE_URL` set they go into a Postgres table (`leeway_reports`, created on first use), so they survive restarts and can be listed and read later from the page. Without it they are files in the results folder, which a free Render service loses on every restart (`EVAL_RESULTS_DIR` can point at a persistent disk, which Render offers only on paid services). To use a database, create one and put its connection string in `DATABASE_URL`; per the providers' pages, Neon has a permanent free plan, while a free Render Postgres expires 30 days after creation. Then press *Check storage*. The connection string is a secret: never commit it or paste it into a chat.
 
 **Locally**, with all three keys in `server/.env`:
 

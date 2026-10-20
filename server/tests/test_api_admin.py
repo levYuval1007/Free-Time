@@ -138,5 +138,52 @@ class AdminApiTests(unittest.TestCase):
         self.assertEqual(listed[0]["status"], "done")
 
 
+class AdminPageTests(unittest.TestCase):
+    def setUp(self):
+        patch = mock.patch.dict(os.environ, {"ADMIN_TOKEN": TOKEN})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.client = TestClient(main.app)
+
+    def test_the_page_is_served_as_html_with_a_strict_policy(self):
+        res = self.client.get("/admin/evals")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.headers["content-type"].startswith("text/html"))
+        self.assertIn("default-src 'none'", res.headers["content-security-policy"])
+        self.assertIn("connect-src 'self'", res.headers["content-security-policy"])
+        self.assertEqual(res.headers["cache-control"], "no-store")
+        self.assertEqual(res.headers["x-content-type-options"], "nosniff")
+
+    def test_the_page_does_not_exist_without_a_configured_token(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("ADMIN_TOKEN", None)
+            self.assertEqual(self.client.get("/admin/evals").status_code, 404)
+
+    def test_the_page_contains_no_secret_and_needs_no_login_to_load(self):
+        res = self.client.get("/admin/evals")  # no Authorization header
+        self.assertNotIn(TOKEN, res.text)
+
+    def test_the_page_talks_only_to_the_admin_endpoints_of_this_server(self):
+        html = self.client.get("/admin/evals").text
+        self.assertIn("/api/admin/evals", html)
+        self.assertNotIn("http://", html)
+        self.assertNotIn("https://", html)
+        self.assertNotIn("<script src", html)
+
+    def test_what_the_page_shows_is_always_put_on_it_as_text(self):
+        html = self.client.get("/admin/evals").text
+        for risky in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("):
+            self.assertNotIn(risky, html)
+        self.assertIn("textContent", html)
+
+    def test_the_page_never_stores_the_token(self):
+        html = self.client.get("/admin/evals").text
+        for storage in ("localStorage", "sessionStorage", "document.cookie", "indexedDB"):
+            self.assertNotIn(storage, html)
+
+    def test_the_page_is_not_in_the_public_api_docs(self):
+        self.assertNotIn("/admin/evals", self.client.get("/openapi.json").text.replace("/api/admin/evals", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

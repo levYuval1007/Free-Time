@@ -18,7 +18,7 @@
 | `planner.py` | Candidate filtering (`select_candidates`) and the rule-based planner |
 | `fill.py` | Lengthens visits when more than 40 spare minutes would be left at arrival (checks opening hours, never passes the deadline minus the margin); used on agent and planner plans |
 | `comparison.py` | AI-vs-planner comparison on fixed trips with a spending cap (`Spend`, `BudgetedClient`, `PlaceRecorder`), measurements and the markdown report |
-| `evalservice.py`, `reportstore.py` | Runs a comparison in the background (one at a time) for the admin endpoints; saves, logs and serves the report |
+| `evalservice.py`, `reportstore.py`, `adminpage.py` | Runs a comparison in the background (one at a time) for the admin endpoints; saves (Postgres when `DATABASE_URL` is set, else files), logs and serves the report, including after a restart; the small admin page |
 | `travel.py` | `TravelTimes`: per-plan memory of driving times, one matrix request fills every known pair |
 | `geo.py` | Haversine, distance to a route, thinning, Google polyline encoding |
 | `places.py`, `ors.py` | Provider clients; they raise `PlacesError` / `RouteError` with user-safe messages |
@@ -48,7 +48,7 @@
 
 ## Admin endpoints
 
-`/api/admin/evals` (start, list, read) spends real money. It exists only when `ADMIN_TOKEN` is set and needs it as a bearer token; the budget is validated (0.05 to 1.00). Never log or echo the token, and keep it out of URLs. Do not call these endpoints or run the comparison without the owner's approval.
+`/api/admin/evals` (start, list, read) spends real money. It exists only when `ADMIN_TOKEN` is set and needs it as a bearer token; the budget is validated (0.05 to 1.00). Never log or echo the token or `DATABASE_URL`, and keep them out of URLs and error messages (the storage check returns only the kind of error). The admin page puts everything on screen as text (no `innerHTML`), keeps the token only in memory, and is served with a strict Content-Security-Policy; tests guard each of these. Database queries are parameterised and psycopg is imported lazily, so tests use a fake connection and no database is needed. Do not call these endpoints or run the comparison without the owner's approval.
 
 ## Gotchas
 

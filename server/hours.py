@@ -56,3 +56,25 @@ def is_open_during(periods, utc_offset_minutes, start_utc: datetime, end_utc: da
     start = day * MINUTES_PER_DAY + local_start.hour * 60 + local_start.minute
     end = start + duration
     return any(open_at <= start and end <= close_at for open_at, close_at in intervals)
+
+
+def minutes_until_change(periods, utc_offset_minutes, now_utc: datetime):
+    """When the opening status next changes, from now: (open_now, minutes).
+
+    (True, minutes) while open, with the minutes left until it closes; (True, None) when it is open all the time;
+    (False, minutes) while closed, with the minutes until it opens; None when the hours are unknown.
+    """
+    if not periods or utc_offset_minutes is None:
+        return None
+    intervals = _open_intervals(periods)
+    if intervals is None:
+        return True, None
+    local = (now_utc + timedelta(minutes=utc_offset_minutes)).replace(second=0, microsecond=0)
+    day = (local.weekday() + 1) % 7  # Google counts Sunday as 0, Python counts Monday as 0
+    now = day * MINUTES_PER_DAY + local.hour * 60 + local.minute
+    for start, end in intervals:
+        if start <= now < end:
+            return True, end - now
+        if start > now:
+            return False, start - now
+    return None

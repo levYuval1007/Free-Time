@@ -10,6 +10,7 @@ import time
 from datetime import timedelta
 
 import geo
+import hours
 import ors
 import planner
 import places
@@ -44,8 +45,9 @@ TOOLS = [
         "name": "search_places",
         "description": (
             "Find places to visit near a point. Returns up to 12 open, well-rated places with id, name, type, "
-            "rating, today's opening hours, detour_minutes (extra driving compared with going straight), "
-            "minutes_from_start and minutes_to_destination. Only places returned here can be used in the "
+            "rating, today's opening hours, closes_in_minutes (or opens_in_minutes when closed now), detour_minutes "
+            "(extra driving compared with going straight), minutes_from_start and minutes_to_destination. Only places "
+            "returned here can be used in the "
             "itinerary. Search near the start or the destination."
         ),
         "input_schema": {
@@ -69,9 +71,10 @@ TOOLS = [
             "Find places that match a free-text query anywhere along the direct driving route from the start to the "
             "destination, for example 'park', 'scenic viewpoint', 'bakery' or 'waterfall'. Use it when the best "
             "stops may be in the middle of the trip and not near either end. Returns up to 12 places with id, name, "
-            "type, rating, today's opening hours, km_from_route (straight-line distance from the road), "
-            "detour_minutes (extra driving compared with going straight), minutes_from_start and "
-            "minutes_to_destination. Only places returned by a search can be used in the itinerary."
+            "type, rating, today's opening hours, closes_in_minutes (or opens_in_minutes when closed now), "
+            "km_from_route (straight-line distance from the road), detour_minutes (extra driving compared with going "
+            "straight), minutes_from_start and minutes_to_destination. Only places returned by a search can be used in "
+            "the itinerary."
         ),
         "input_schema": {
             "type": "object",
@@ -283,6 +286,11 @@ class ToolBox:
         }
         if off_route is not None:
             described["km_from_route"] = round(off_route, 1)
+        status = hours.minutes_until_change(place.get("periods"), place.get("utc_offset_minutes"), self.ctx.now)
+        if status:
+            open_now, minutes = status
+            if minutes is not None:
+                described["closes_in_minutes" if open_now else "opens_in_minutes"] = minutes
         return described
 
     def _local_weekday(self, place):

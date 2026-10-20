@@ -34,6 +34,15 @@ class TripContext:
         return self.arrive_by - timedelta(minutes=self.buffer_minutes)
 
 
+def _hours_that_day(place, moment):
+    """The place's opening hours for the day of the visit, as text (empty when unknown)."""
+    text = place.get("weekday_text")
+    if not text or len(text) != 7:
+        return ""
+    local = moment + timedelta(minutes=place.get("utc_offset_minutes") or 0)
+    return text[local.weekday()]  # Google lists Monday first, like Python
+
+
 def _local_clock(moment, place):
     local = moment + timedelta(minutes=place.get("utc_offset_minutes") or 0)
     return local.strftime("%H:%M")
@@ -98,10 +107,12 @@ def _schedule(ctx, places, grid, last):
         if open_now is None:
             problems.append(f"the opening hours of '{place['name']}' are unknown")
         elif not open_now:
+            hours_text = _hours_that_day(place, arrive)
             problems.append(
                 f"'{place['name']}' is not open for the whole visit "
                 f"({_local_clock(arrive, place)}-{_local_clock(leave, place)} local time, "
                 f"and it must stay open {planner.CLOSING_MARGIN_MINUTES} minutes after you leave)"
+                + (f"; its hours that day: {hours_text}" if hours_text else "")
             )
         stops.append(
             {"place": place, "drive_minutes": drive, "arrive": arrive, "leave": leave, "visit_minutes": visit}
