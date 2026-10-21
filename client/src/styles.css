@@ -156,7 +156,10 @@ select:disabled { background: #f3f3f6; cursor: not-allowed; }
 }
 .chips .chip:hover:not(:disabled) { background: var(--accent-soft); }
 .chips .chip.active { background: var(--accent); color: white; }
-.tag-chips { margin: 0.6rem 0 0; }
+/* Preference tiles: the icon above a short label, always five in one row */
+.chips.tag-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; margin: 0.6rem 0 0; }
+.tag-chips .chip { min-width: 0; gap: 0.15rem; padding: 0.5rem 0.1rem 0.4rem; border-radius: 12px; font-size: 0.72rem; font-weight: 600; line-height: 1.1; }
+.tag-chips .tag-icon { font-size: 1.45rem; line-height: 1.2; }
 .chip-time { font-size: 0.78rem; font-weight: 400; opacity: 0.85; }
 
 button {

@@ -10,7 +10,7 @@ export const PREFERENCE_TAGS: PreferenceTag[] = [
   { emoji: "☕", label: "Coffee", term: "coffee" },
   { emoji: "🌳", label: "Nature", term: "nature" },
   { emoji: "🎨", label: "Culture", term: "culture" },
-  { emoji: "👨‍👩‍👧", label: "Kids-friendly", term: "kids-friendly" },
+  { emoji: "👨‍👩‍👧", label: "Kids", term: "kids-friendly" },
   { emoji: "🤫", label: "Quiet", term: "quiet" },
 ];
 

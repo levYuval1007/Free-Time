@@ -203,9 +203,11 @@ export default function App() {
                   type="button"
                   className={`chip${active ? " active" : ""}`}
                   aria-pressed={active}
+                  title={tag.term}
                   onClick={() => setPreferences(toggleTerm(preferences, tag.term))}
                 >
-                  <span aria-hidden="true">{tag.emoji}</span> {tag.label}
+                  <span className="tag-icon" aria-hidden="true">{tag.emoji}</span>
+                  {tag.label}
                 </button>
               );
             })}
