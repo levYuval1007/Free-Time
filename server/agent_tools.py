@@ -6,9 +6,11 @@ so the model can read them and correct itself; nothing here raises for bad model
 
 import json
 import logging
+import math
 import time
 from datetime import timedelta
 
+import fill
 import geo
 import hours
 import ors
@@ -20,6 +22,7 @@ log = logging.getLogger("tools")
 
 MAX_SEARCHES = 3
 MAX_SUBMISSIONS = 3
+RECONSIDER = True  # ask the model once to think again when a valid itinerary leaves much time unused
 MAX_RESULTS = 20  # places checked for detour per search
 MAX_SHOWN = 12  # places shown to the model per search, best quality first
 MIN_RADIUS_M = 300
@@ -149,6 +152,8 @@ class ToolBox:
         self.searches = 0
         self.submissions = 0
         self.itinerary = None  # set once a submission passes validation
+        self._held = None  # a valid plan kept while the model was asked once to reconsider it
+        self._reconsidered = False
 
     @property
     def finished(self):
@@ -293,6 +298,24 @@ class ToolBox:
                 described["closes_in_minutes" if open_now else "opens_in_minutes"] = minutes
         return described
 
+    def _reconsider_leftover(self, result):
+        """Spare minutes that would remain after the server lengthens the visits, when asking the model to think again
+        is worth it (once; room for another stop and other places to choose from); otherwise 0."""
+        if not RECONSIDER or self._reconsidered or self.submissions >= MAX_SUBMISSIONS or len(result["stops"]) >= planner.MAX_STOPS:
+            return 0
+        chosen = {s["place"]["id"] for s in result["stops"]}
+        if not any(place_id not in chosen for place_id in self.ctx.known_places):
+            return 0
+        filled, _ = fill.fill_free_time(result, self.ctx.now, self.ctx.arrive_by, self.ctx.buffer_minutes)
+        leftover = math.floor(fill._slack_minutes(filled["arrive_destination"], self.ctx.arrive_by))
+        return leftover if leftover > fill.MAX_SLACK_MINUTES else 0
+
+    def settle(self):
+        """At the end of a run: a valid plan that was held for reconsideration is better than none."""
+        if self.itinerary is None and self._held is not None:
+            self.itinerary = self._held
+            log.info("using the held itinerary")
+
     def _local_weekday(self, place):
         local = self.ctx.now + timedelta(minutes=place.get("utc_offset_minutes") or 0)
         return local.weekday()  # Google lists Monday first, like Python
@@ -308,11 +331,27 @@ class ToolBox:
         log.info("submit stops=%s accepted=%s", len(stops) if isinstance(stops, list) else "?", not errors)
         if errors:
             left = MAX_SUBMISSIONS - self.submissions
+            if not left and self._held is not None:
+                self.itinerary = self._held
+                return "Not accepted, so your earlier valid itinerary stands.", False
             tail = f"You can submit {left} more time(s)." if left else "No submissions left."
             return "Rejected:\n- " + "\n- ".join(errors) + "\n" + tail, True
         for stop, proposed in zip(result["stops"], stops):
             stop["why"] = _text(proposed.get("why"), 200)
         result["summary"] = _text(args.get("summary"), 300)
+        leftover = self._reconsider_leftover(result)
+        if leftover:
+            self._held = result
+            self._reconsidered = True
+            self.submissions -= 1  # a request to reconsider does not use up a submission
+            log.info("submit held: %d spare minutes, %d stops", leftover, len(result["stops"]))
+            return (
+                f"This itinerary is valid, but even with longer visits you would arrive about {leftover} minutes "
+                "earlier than needed. Consider adding a stop from the places already found (or a new search) instead "
+                "of one long visit, in particular if the preferences suggest short visits. Submit again with the "
+                "improved itinerary, or submit the same stops again if you think they are best; it will then be "
+                "accepted. This request is made only once.", True,
+            )
         trimmed = result.pop("trimmed", [])
         self.itinerary = result
         if not trimmed:

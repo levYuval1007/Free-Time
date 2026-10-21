@@ -44,7 +44,9 @@
 
 **Add a setting:** read it with `config.get` at call time (tests patch `os.environ`), validate it, ignore bad values with a warning, then update `.env.example` and the README table.
 
-**Switching model:** prices in `ANTHROPIC_PRICE_*` must be updated too. Thinking blocks are replayed unchanged on purpose; do not filter or rewrite assistant content.
+**Switching model:** prices in `ANTHROPIC_PRICE_*` must be updated too (the comparison has a `LIST_PRICES` table in `comparison.py` for models it knows; add the new model there). A model call stopped by the comparison cap ends the agent with reason `budget`, not `llm_unavailable`. Thinking blocks are replayed unchanged on purpose; do not filter or rewrite assistant content.
+
+**Reconsideration:** `ToolBox._submit_itinerary` holds a valid itinerary once (`_held`) when `fill` could not use up most of the spare time and another stop is possible; the reply is an error-flagged tool result asking the model to reconsider, and the submission is refunded. `ToolBox.settle()` (called at the end of `run_agent`) falls back to the held plan. `agent_tools.RECONSIDER` switches it off; the shared test fixtures in `test_agent.py` do, and `test_reconsider.py` turns it on.
 
 ## Admin endpoints
 
@@ -56,4 +58,4 @@
 - `search_places` results are cut to 12 after the detour check, but all checked places stay in `ctx.known_places`.
 - The Places field mask includes rating and opening hours, which bills at the higher Enterprise tier. Do not add fields casually.
 - `ors.route_coords` caches for 120 s and remembers a failure for 5 s so concurrent requests share one outcome.
-- Typical visit lengths live in `planner.VISIT_MINUTES` (the model sees them, and `fill.py` lets a visit grow to twice its typical length); give new place types a realistic value so a cafe is not stretched into an hour and a half.
+- Typical visit lengths live in `planner.VISIT_MINUTES` (the model sees them, and `fill.py` lets a visit grow to one and a half times its typical length); give new place types a realistic value so a cafe is not stretched into an hour and a half.

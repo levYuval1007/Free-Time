@@ -15,6 +15,8 @@
 
 ## Gotchas
 
+- **`agent_tools.RECONSIDER` is off in tests** (set when `test_agent.py` is imported) because most tests script the model's replies exactly with a long deadline; `test_reconsider.py` patches it on.
+
 - **Distinct coordinates.** `travel.TravelTimes` treats places at identical coordinates as one node, so give fake places different `lat`/`lon` when a test counts routing requests.
 - **Shared state.** `ors._route_cache`/`_route_locks` and `limits.guard` are module-level; tests that touch them clear or replace them (see `setUp`/`tearDown` in `test_route_failure_sharing.py` and `test_api_jobs.py`).
 - **`assertLogs` needs at least one log line** on that logger, or it fails. Assert on log text, never on coordinates or user text.

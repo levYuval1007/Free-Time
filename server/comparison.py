@@ -33,10 +33,25 @@ log = logging.getLogger("comparison")
 
 DEFAULT_MAX_USD = 0.30
 SEARCH_USD = limits.COST_NEARBY_SEARCH_USD
-MODEL_CALL_RESERVE_USD = 0.05  # kept free before every model call
+FIRST_CALL_TOKENS = 8000  # what a model call is assumed to read before the first real one is seen
 SCENARIO_RESERVE_USD = 0.08  # a paid scenario is not started with less than this left (one typically costs about 0.10)
-# Used only when the ANTHROPIC_PRICE_* settings are not all present. USD per million tokens; check your model's prices.
-ASSUMED_PRICES = {"input_tokens": 2.0, "output_tokens": 10.0, "cache_read_tokens": 0.2, "cache_write_tokens": 2.5}
+# Used only when the ANTHROPIC_PRICE_* settings are not all present: input and output list prices in USD per million
+# tokens, from Anthropic's price list as of 2026-10-06 (prices change; check yours). Cache reads are assumed to cost
+# 0.1 times the input price and cache writes 1.25 times, the usual multipliers.
+LIST_PRICES = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-fable-5-1": (10.0, 50.0),
+}
+DEFAULT_PRICED_MODEL = "claude-sonnet-5"
+CACHE_READ_FACTOR = 0.1
+CACHE_WRITE_FACTOR = 1.25
 PRICE_SETTINGS = {
     "input_tokens": "ANTHROPIC_PRICE_INPUT_PER_MTOK",
     "output_tokens": "ANTHROPIC_PRICE_OUTPUT_PER_MTOK",
@@ -121,13 +136,38 @@ def check(scenario: Scenario, result: dict, arrive_by: datetime) -> list[str]:
 
 # ---------------------------------------------------------------- spending
 
-def prices_from_settings():
-    """(prices, assumed): the ANTHROPIC_PRICE_* values when all four are set, otherwise the assumed list prices."""
+def assumed_prices(model=None) -> dict:
+    """List prices for the model (Sonnet's when it is not known), with the usual cache multipliers."""
+    inputs, outputs = LIST_PRICES.get(model, LIST_PRICES[DEFAULT_PRICED_MODEL])
+    return {
+        "input_tokens": inputs,
+        "output_tokens": outputs,
+        "cache_read_tokens": round(inputs * CACHE_READ_FACTOR, 4),
+        "cache_write_tokens": round(inputs * CACHE_WRITE_FACTOR, 4),
+    }
+
+
+ASSUMED_PRICES = assumed_prices(DEFAULT_PRICED_MODEL)
+
+
+def prices_from_settings(model=None):
+    """(prices, assumed): the ANTHROPIC_PRICE_* values when all four are set, otherwise the model's list prices."""
     try:
         values = {key: float(config.get(name)) for key, name in PRICE_SETTINGS.items()}
         return values, False
     except (TypeError, ValueError):
-        return dict(ASSUMED_PRICES), True
+        return assumed_prices(model), True
+
+
+def price_note(model, assumed) -> str:
+    if not assumed:
+        return "from ANTHROPIC_PRICE_*"
+    if model in LIST_PRICES:
+        return (
+            f"assumed list prices for `{model}` (cache reads at {CACHE_READ_FACTOR}x and writes at {CACHE_WRITE_FACTOR}x "
+            "the input price; set ANTHROPIC_PRICE_* to use your own)"
+        )
+    return f"assumed list prices of {DEFAULT_PRICED_MODEL} (none known for `{model}`; set ANTHROPIC_PRICE_* to use your own)"
 
 
 class Spend:
@@ -139,6 +179,7 @@ class Spend:
         self.assumed = assumed
         self.searches = 0
         self.usage = {key: 0 for key in PRICE_SETTINGS}
+        self.largest_call_tokens = 0
 
     def claude_usd(self, usage=None):
         usage = self.usage if usage is None else usage
@@ -154,10 +195,22 @@ class Spend:
     def add_usage(self, usage):
         if usage is None:
             return
-        self.usage["input_tokens"] += getattr(usage, "input_tokens", 0) or 0
+        fresh = getattr(usage, "input_tokens", 0) or 0
+        read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        written = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        self.usage["input_tokens"] += fresh
         self.usage["output_tokens"] += getattr(usage, "output_tokens", 0) or 0
-        self.usage["cache_read_tokens"] += getattr(usage, "cache_read_input_tokens", 0) or 0
-        self.usage["cache_write_tokens"] += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        self.usage["cache_read_tokens"] += read
+        self.usage["cache_write_tokens"] += written
+        self.largest_call_tokens = max(self.largest_call_tokens, fresh + read + written)
+
+    def next_call_reserve(self):
+        """An upper estimate of what one more model call could cost: the biggest call so far grown by half, all of it
+        at the dearer of the input and cache-write prices, plus a full-length answer. It follows the model's prices,
+        so a cheap model is not held back by a reserve that only a dear one needs."""
+        biggest = max(self.largest_call_tokens, FIRST_CALL_TOKENS)
+        per_token = max(self.prices["input_tokens"], self.prices["cache_write_tokens"]) / 1_000_000
+        return biggest * 1.5 * per_token + agent.MAX_TOKENS * self.prices["output_tokens"] / 1_000_000
 
     def snapshot(self):
         return self.searches, dict(self.usage), self.usd
@@ -174,7 +227,10 @@ class Spend:
 
 
 class BudgetExceeded(anthropic.APIError):
-    """Raised instead of a model call that the cap does not allow; the agent treats it like an unavailable model."""
+    """Raised instead of a model call that the cap does not allow. The agent stops, with the reason "budget"
+    (not "llm_unavailable"), and the plan falls back to the planner."""
+
+    agent_reason = "budget"
 
     def __init__(self, message="the comparison budget is used up"):
         Exception.__init__(self, message)
@@ -189,7 +245,7 @@ class BudgetedClient:
         self.messages = SimpleNamespace(create=self._create)
 
     def _create(self, **kwargs):
-        if not self._spend.can_afford(MODEL_CALL_RESERVE_USD):
+        if not self._spend.can_afford(self._spend.next_call_reserve()):
             raise BudgetExceeded()
         response = self._client.messages.create(**kwargs)
         self._spend.add_usage(getattr(response, "usage", None))
@@ -354,6 +410,7 @@ def summarize(results: list[dict]) -> dict:
         "errors": sum(1 for r in results if "error" in r),
         "agent_answered": len(agent_ok),
         "agent_fell_back": len(ran) - len(agent_ok),
+        "agent_budget_stopped": sum(1 for r in ran if r["agent"]["degraded_reason"] == "budget"),
         "compared": len(paired),
         "agent_valid": sum(1 for r in paired if not r["agent"]["problems"]),
         "planner_valid": sum(1 for r in paired if not r["planner"]["problems"]),
@@ -391,7 +448,8 @@ def run_comparison(
     chosen = matching_scenarios(only, scenarios)
     if only and scenarios is None and not chosen:
         raise ValueError(f"No scenario name contains '{only}'. Available: {', '.join(scenario_names())}")
-    prices, assumed = prices_from_settings()
+    model = agent._model()
+    prices, assumed = prices_from_settings(model)
     spend = Spend(max_usd, prices, assumed)
     results, skipped = [], []
     for scenario in chosen:
@@ -403,12 +461,14 @@ def run_comparison(
         results.append(run_scenario(scenario, spend, now, backends))
     report = {
         "generated": (now or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
-        "model": agent._model(),
+        "model": model,
         "effort": agent._effort() or "default",
         "max_usd": max_usd,
         "only": only or None,
         "spent_usd": round(spend.usd, 4),
         "prices_assumed": assumed,
+        "prices_note": price_note(model, assumed),
+        "prices": prices,
         "results": results,
         "skipped": skipped,
         "summary": summarize(results),
@@ -445,9 +505,17 @@ def _fmt(value, suffix="") -> str:
     return "-" if value is None else f"{value}{suffix}"
 
 
+def comparison_search_usd() -> float:
+    return SEARCH_USD
+
+
 def render_markdown(report: dict) -> str:
     s = report["summary"]
-    prices = "assumed list prices (set ANTHROPIC_PRICE_* to use your own)" if report["prices_assumed"] else "from ANTHROPIC_PRICE_*"
+    if report["prices_assumed"]:
+        prices = report.get("prices_note") or "assumed list prices (set ANTHROPIC_PRICE_* to use your own)"
+    else:
+        prices = "from ANTHROPIC_PRICE_*"
+    used = report.get("prices")
     lines = [
         "# Leeway: AI agent vs rule-based planner",
         "",
@@ -462,7 +530,9 @@ def render_markdown(report: dict) -> str:
         "## Summary",
         "",
         f"Scenarios run: {s['scenarios_run']} (errors: {s['errors']}, skipped for budget: {len(report['skipped'])}). "
-        f"The agent answered in {s['agent_answered']}; it fell back to the planner in {s['agent_fell_back']}. "
+        f"The agent answered in {s['agent_answered']}; it fell back to the planner in {s['agent_fell_back']}"
+        + (f" ({s['agent_budget_stopped']} of them because the comparison budget ran out)" if s.get("agent_budget_stopped") else "")
+        + ". "
         f"Compared: {s['compared']}.",
         "",
         "| | AI agent | Planner |",
@@ -479,6 +549,17 @@ def render_markdown(report: dict) -> str:
         "",
         "## Cost",
         "",
+        *(
+            [
+                "Claude prices used, USD per million tokens: "
+                f"input {used['input_tokens']}, output {used['output_tokens']}, "
+                f"cache read {used['cache_read_tokens']}, cache write {used['cache_write_tokens']}; "
+                f"Places searches at ${comparison_search_usd():.3f} each.",
+                "",
+            ]
+            if used
+            else []
+        ),
         "| Scenario | Places searches | Tokens | Estimated cost | Seconds |",
         "|---|---|---|---|---|",
     ]
@@ -497,7 +578,10 @@ def render_markdown(report: dict) -> str:
         agent_side, planner_side = r["agent"], r["planner"]
         note = ""
         if agent_side["stats"] and agent_side["source"] != "agent":
-            note = f" (the agent did not finish: `{agent_side['degraded_reason'] or agent_side['status']}`; this is the planner's answer)"
+            if agent_side["degraded_reason"] == "budget":
+                note = " (the agent was stopped by the comparison budget, so this is the planner's answer, not a failure of the agent)"
+            else:
+                note = f" (the agent did not finish: `{agent_side['degraded_reason'] or agent_side['status']}`; this is the planner's answer)"
         lines += [
             "| | AI agent | Planner |",
             "|---|---|---|",

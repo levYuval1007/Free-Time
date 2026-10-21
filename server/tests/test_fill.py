@@ -57,18 +57,18 @@ class FillTests(unittest.TestCase):
         plan = make_plan([30, 30], kinds=["park", "museum"])  # arrives after 90 minutes
         filled, extensions, arrive_by = fill_plan(plan, 90 + 110)
         self.assertEqual(slack(filled, arrive_by), 30)
-        self.assertEqual([stop["visit_minutes"] for stop in filled["stops"]], [70, 70])
+        self.assertEqual([stop["visit_minutes"] for stop in filled["stops"]], [65, 75])  # the park stops at 65 (1.5 * 45, in steps of 5); the museum takes the rest
 
-    def test_growth_stops_at_twice_the_typical_visit(self):
-        plan = make_plan([30])  # a park: typical visit 45, so at most 90
+    def test_growth_stops_at_one_and_a_half_times_the_typical_visit(self):
+        plan = make_plan([30])  # a park: typical visit 45, so at most 67, in steps of 5: 65
         filled, extensions, arrive_by = fill_plan(plan, 600)
-        self.assertEqual(filled["stops"][0]["visit_minutes"], 90)
-        self.assertEqual(extensions, [("P0", 30, 90)])
+        self.assertEqual(filled["stops"][0]["visit_minutes"], 65)
+        self.assertEqual(extensions, [("P0", 30, 65)])
         self.assertGreater(slack(filled, arrive_by), fill.MAX_SLACK_MINUTES)  # nothing more can be done
 
     def test_a_museum_may_grow_more_than_a_park(self):
         filled, _, _ = fill_plan(make_plan([30], kinds=["museum"]), 600)
-        self.assertEqual(filled["stops"][0]["visit_minutes"], 180)  # twice 90, and the overall maximum
+        self.assertEqual(filled["stops"][0]["visit_minutes"], 135)  # 1.5 * 90
 
     def test_a_longer_visit_than_the_cap_is_never_shortened(self):
         filled, extensions, _ = fill_plan(make_plan([150]), 600)
@@ -141,10 +141,10 @@ class FillInPlansTests(unittest.TestCase):
         with self.assertLogs("planning", level="INFO") as logged:
             outcome = planning.execute_plan(request(), lambda text: None, NOW, deps(claude))
         stop = outcome.result["stops"][0]
-        self.assertEqual(stop["visit_minutes"], 90)  # asked for 40; a park may reach twice its typical 45
+        self.assertEqual(stop["visit_minutes"], 65)  # asked for 40; a park may reach 1.5 times its typical 45, in steps of 5
         self.assertEqual(stop["why"], "nice")
         self.assertEqual(outcome.result["summary"], "Enjoy")
-        arrive = NOW + timedelta(minutes=10 + 90 + 10)
+        arrive = NOW + timedelta(minutes=10 + 65 + 10)
         self.assertEqual(outcome.result["arrive_destination"], arrive.isoformat())
         self.assertIn("lengthened visits", "\n".join(logged.output))
 

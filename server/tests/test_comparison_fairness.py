@@ -224,13 +224,13 @@ class VisitLengthTests(unittest.TestCase):
         found = json.loads(box.run("search_places", {"lat": 32.08, "lon": 34.78, "radius_m": 2000})[0])
         self.assertEqual(found[0]["typical_visit_minutes"], 30)
 
-    def test_a_cafe_visit_is_never_stretched_beyond_an_hour(self):
+    def test_a_cafe_visit_is_never_stretched_beyond_three_quarters_of_an_hour(self):
         filled, _, _ = fill_plan(make_plan([20], kinds=["cafe"]), 600)
-        self.assertEqual(filled["stops"][0]["visit_minutes"], 60)
+        self.assertEqual(filled["stops"][0]["visit_minutes"], 45)  # 1.5 * 30
 
     def test_a_bakery_stays_short(self):
         filled, _, _ = fill_plan(make_plan([20], kinds=["bakery"]), 600)
-        self.assertEqual(filled["stops"][0]["visit_minutes"], 40)
+        self.assertEqual(filled["stops"][0]["visit_minutes"], 30)  # 1.5 * 20
 
     def test_big_attractions_may_take_longer(self):
         filled, _, _ = fill_plan(make_plan([30], kinds=["zoo"]), 600)

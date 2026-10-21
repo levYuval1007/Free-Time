@@ -14,8 +14,8 @@ npm run dev         # :5173, proxies /api to :8000
 - `src/App.tsx`: all state and the plan flow. "Plan my trip" calls `api.route` and `api.startPlan` in parallel and then polls the job (`lib/polling.ts`). A `currentRun` ref ignores answers from a run that was replaced or abandoned.
 - `src/api.ts`: typed fetch. Errors are `ApiError` with the server's `{error}` message and the status. `startPlan` sends a fresh `Idempotency-Key` per click.
 - `src/types.ts`: mirrors the server's pydantic models in `server/main.py`. Change both together.
-- `src/components/`: `PlaceField` + `Autocomplete` (controlled, Google session tokens, "my location"), `ArrivalTimePicker` (rolling 24 hours, chips + select), `TripMap` (Leaflet), `TripSheet` (phone carousel), `ResultPanel` + `Timeline` (desktop), `Notices`, `Steps`.
-- `src/lib/`: pure, tested helpers (`arrival`, `carousel`, `polling`, `format`, `budgetText`, `maps`).
+- `src/components/`: `PlaceField` + `Autocomplete` (controlled, Google session tokens, "my location"), `ArrivalTimePicker` (chips + a button that opens a dialog with `WheelColumn` drums for day, hour and minute; today and the next six days, five-minute steps, a time in the past snaps forward), `TripMap` (Leaflet), `TripSheet` (phone carousel), `ResultPanel` + `Timeline` (desktop), `Notices`, `Steps`.
+- `src/lib/`: pure, tested helpers (`arrival`, `wheel`, `carousel`, `polling`, `format`, `budgetText`, `maps`).
 
 ## Conventions
 

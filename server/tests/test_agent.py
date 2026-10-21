@@ -10,6 +10,10 @@ import agent_tools
 import places
 import validator
 
+# Most tests script the model's replies exactly, with a long deadline and one short visit; the request to reconsider an
+# itinerary that leaves much time unused (agent_tools.RECONSIDER) is switched on in test_reconsider.py only.
+agent_tools.RECONSIDER = False
+
 NOW = datetime(2026, 9, 20, 9, 0, tzinfo=timezone.utc)  # Sunday 12:00 in Israel (UTC+3)
 ALWAYS_OPEN = [{"open": {"day": 0, "hour": 0, "minute": 0}}]
 # Open Sunday 09:00-17:00 local time only.

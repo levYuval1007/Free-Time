@@ -118,6 +118,47 @@ class SpendTests(unittest.TestCase):
         self.assertEqual(prices, comparison.ASSUMED_PRICES)
 
 
+class PriceAndReserveTests(unittest.TestCase):
+    def test_default_prices_follow_the_model(self):
+        haiku = comparison.assumed_prices("claude-haiku-5-5")
+        self.assertEqual((haiku["input_tokens"], haiku["output_tokens"]), (0.10, 0.50))
+        self.assertAlmostEqual(haiku["cache_read_tokens"], 0.01)
+        self.assertAlmostEqual(haiku["cache_write_tokens"], 0.125)
+
+    def test_an_unknown_model_gets_sonnet_prices_and_says_so(self):
+        self.assertEqual(comparison.assumed_prices("mystery-model"), comparison.ASSUMED_PRICES)
+        self.assertIn("none known for `mystery-model`", comparison.price_note("mystery-model", True))
+        self.assertIn("claude-haiku-5-5", comparison.price_note("claude-haiku-5-5", True))
+        self.assertIn("assumed list prices", comparison.price_note("claude-haiku-5-5", True))
+
+    def test_settings_prices_win_over_the_model_defaults(self):
+        env = {name: "1" for name in comparison.PRICE_SETTINGS.values()}
+        with mock.patch.dict(os.environ, env):
+            prices, assumed = comparison.prices_from_settings("claude-haiku-5-5")
+        self.assertFalse(assumed)
+        self.assertEqual(prices["input_tokens"], 1.0)
+
+    def test_the_reserve_for_sonnet_is_about_five_cents(self):
+        # 8000 tokens * 1.5 * $2.5 per million (cache write) + 2000 output tokens * $10 per million
+        self.assertAlmostEqual(spend().next_call_reserve(), 0.05, places=3)
+
+    def test_the_reserve_is_far_smaller_for_a_cheap_model(self):
+        cheap = comparison.Spend(0.30, comparison.assumed_prices("claude-haiku-5-5"), True)
+        self.assertLess(cheap.next_call_reserve(), 0.005)
+
+    def test_the_reserve_grows_with_the_largest_call_seen(self):
+        s = spend()
+        before = s.next_call_reserve()
+        s.add_usage(usage(input_tokens=1000, cache_read=19000))
+        self.assertGreater(s.next_call_reserve(), before)
+
+    def test_a_cheap_model_is_not_stopped_by_a_reserve_only_a_dear_model_needs(self):
+        cheap = comparison.Spend(0.04, comparison.assumed_prices("claude-haiku-5-5"), True)
+        claude = FakeClaude(reply(tool_use("t1", "search_places", **SEARCH_ARGS)))
+        comparison.BudgetedClient(claude, cheap).messages.create(model="m", messages=[])
+        self.assertEqual(len(claude.calls), 1)
+
+
 class GuardTests(unittest.TestCase):
     def test_the_client_passes_calls_through_and_counts_their_tokens(self):
         s = spend()
@@ -139,7 +180,7 @@ class GuardTests(unittest.TestCase):
     def test_the_agent_treats_a_refused_call_as_an_unavailable_model(self):
         client = comparison.BudgetedClient(FakeClaude(), spend(cap=0.01))
         outcome = agent.run_agent(client, make_box(), "trip")
-        self.assertEqual((outcome.status, outcome.reason), ("failed", "llm_unavailable"))
+        self.assertEqual((outcome.status, outcome.reason), ("failed", "budget"))
 
     def test_searches_are_counted_and_every_place_is_remembered(self):
         s = spend()
@@ -400,6 +441,20 @@ class MarkdownTests(unittest.TestCase):
         report = self.report()
         report["results"][0]["agent"].update({"source": "baseline", "degraded_reason": "refused", "status": "degraded"})
         self.assertIn("the agent did not finish: `refused`", comparison.render_markdown(report))
+
+    def test_a_budget_stop_is_not_called_a_failure_of_the_agent(self):
+        report = self.report()
+        report["results"][0]["agent"].update({"source": "baseline", "degraded_reason": "budget", "status": "degraded"})
+        text = comparison.render_markdown(report)
+        self.assertIn("stopped by the comparison budget", text)
+        self.assertNotIn("the agent did not finish: `budget`", text)
+
+    def test_the_summary_counts_agent_runs_stopped_by_the_budget(self):
+        b = backends()
+        b["client"] = lambda: comparison.BudgetedClient(FakeClaude(), spend(cap=0.01))
+        scenarios = [COFFEE]
+        report = comparison.run_comparison(scenarios, max_usd=0.30, now=NOW, backends=b)
+        self.assertEqual(report["summary"]["agent_fell_back"], 1)
 
     def test_a_trip_with_no_free_time_is_not_called_a_fallback(self):
         text = comparison.render_markdown(self.report())

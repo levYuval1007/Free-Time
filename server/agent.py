@@ -52,7 +52,7 @@ estimates only need to be roughly right. A plan up to 15 minutes too late is acc
 - A stop may add at most about 20 minutes of driving compared with going straight (roughly 10 minutes off the road and 10 back). The server rejects stops that add more.
 - Use the free time well: aim to reach the destination 15 to 40 minutes before the deadline. Prefer one more good \
 stop or a longer visit to leaving a lot of time unused. If much more than that is left over, the server lengthens \
-your visits for you (up to twice the typical visit). Do not cram: fewer, better stops beat many rushed ones.
+your visits for you (up to one and a half times the typical visit). Do not cram: fewer, better stops beat many rushed ones. If your itinerary leaves much unused time and there is room \nfor another stop, the server asks once whether you want to add one.
 - Opening hours: closes_in_minutes is how many minutes from now a place closes (opens_in_minutes if it is closed now), \
 and a visit must end at least 15 minutes before closing. For the first stop that means minutes_from_start + the visit + \
 15 must not exceed closes_in_minutes; for later stops add the earlier visits and the drives between. A place with neither \
@@ -176,7 +176,7 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=None, on_pro
             )
         except anthropic.APIError as err:
             log.warning("Claude request failed in round %d: %s", round_number, err)
-            outcome.reason = "llm_unavailable"
+            outcome.reason = getattr(err, "agent_reason", "llm_unavailable")
             break
         _usage_add(outcome.usage, getattr(response, "usage", None))
         round_usage = getattr(response, "usage", None)
@@ -216,6 +216,7 @@ def run_agent(client, box: agent_tools.ToolBox, user_message, model=None, on_pro
     else:
         outcome.reason = "too_many_rounds"
 
+    box.settle()
     outcome.searches = box.searches
     outcome.known_places = box.ctx.known_places
     if box.itinerary is not None:

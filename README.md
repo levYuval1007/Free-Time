@@ -43,7 +43,7 @@ An LLM is an unreliable component, so it is boxed in:
 
 ### Using the spare time
 
-Leeway aims to get you to the destination 15 to 40 minutes before the deadline. The agent is told so. If a plan, from the agent or from the rule-based planner, would still leave more than 40 minutes, the server lengthens the visits: five minutes at a time, shared between the stops, up to twice the typical visit for that kind of place (never more than 180 minutes), and only while every stop stays open for the whole longer visit and the arrival stays before the deadline minus the safety margin. Driving times do not change, so no new routing request is needed. When the stops cannot grow any further the plan simply stays as it is.
+Leeway aims to get you to the destination 15 to 40 minutes before the deadline. The agent is told so. If a plan, from the agent or from the rule-based planner, would still leave more than 40 minutes, the server lengthens the visits: five minutes at a time, shared between the stops, up to one and a half times the typical visit for that kind of place (never more than 180 minutes), and only while every stop stays open for the whole longer visit and the arrival stays before the deadline minus the safety margin. Driving times do not change, so no new routing request is needed. When the stops cannot grow any further the plan simply stays as it is. Before that, the agent gets one chance to do better: if its valid itinerary would still leave more than 40 minutes after the visits are lengthened, there are fewer than three stops and other places were found, the server answers the submission with a request to consider adding a stop instead of one long visit. The request is made once and does not use up a submission. If the model resubmits the same stops, or answers with text, or its improved try keeps failing validation, the first valid itinerary is used.
 
 ### The agent's tools
 
@@ -120,7 +120,7 @@ $env:GOOGLE_MAPS_API_KEY = "your-key"
 | `PLANS_PER_IP_PER_HOUR` | 8 | Plans one address may start per hour (then 429) |
 | `PLANS_PER_DAY` | 150 | Plans per day for everyone (then 429) |
 | `AGENT_DAILY_TOKENS` | 2,000,000 | Agent tokens per day; after that plans use the basic planner |
-| `ANTHROPIC_PRICE_*_PER_MTOK` | unset | `INPUT`, `OUTPUT`, `CACHE_READ` and `CACHE_WRITE` prices in USD per million tokens, for a cost estimate in the log. Update them when you change the model |
+| `ANTHROPIC_PRICE_*_PER_MTOK` | unset | `INPUT`, `OUTPUT`, `CACHE_READ` and `CACHE_WRITE` prices in USD per million tokens, for a cost estimate in the log. Update them when you change the model. The comparison falls back to list prices for the configured model (marked "assumed" in the report) when they are not all set |
 
 **Server:**
 

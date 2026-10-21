@@ -15,7 +15,7 @@ import validator
 MAX_SLACK_MINUTES = 40  # more spare time than this at arrival is filled with longer visits
 TARGET_SLACK_MINUTES = 30  # where the extension stops (never below the safety margin)
 STEP_MINUTES = 5
-MAX_VISIT_FACTOR = 2  # a visit may grow to this many times the typical visit for that kind of place
+MAX_VISIT_FACTOR = 1.5  # a visit may grow to this many times the typical visit for that kind of place
 
 
 def _slack_minutes(arrival, arrive_by):
@@ -23,12 +23,12 @@ def _slack_minutes(arrival, arrive_by):
 
 
 def _caps(stops):
-    """The longest each visit may become: twice the typical visit, at most the validator's maximum, and never less
+    """The longest each visit may become: one and a half times the typical visit (in whole steps), at most the validator's maximum, and never less
     than what the plan already has."""
     return [
         max(
             stop["visit_minutes"],
-            min(validator.MAX_VISIT_MINUTES, MAX_VISIT_FACTOR * planner.visit_minutes(stop["place"])),
+            min(validator.MAX_VISIT_MINUTES, int(MAX_VISIT_FACTOR * planner.visit_minutes(stop["place"])) // STEP_MINUTES * STEP_MINUTES),
         )
         for stop in stops
     ]
