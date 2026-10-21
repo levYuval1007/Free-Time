@@ -156,6 +156,7 @@ select:disabled { background: #f3f3f6; cursor: not-allowed; }
 }
 .chips .chip:hover:not(:disabled) { background: var(--accent-soft); }
 .chips .chip.active { background: var(--accent); color: white; }
+.tag-chips { margin: 0.6rem 0 0; }
 .chip-time { font-size: 0.78rem; font-weight: 400; opacity: 0.85; }
 
 button {
@@ -485,3 +486,17 @@ button.nav-item.active .nav-dot { background: var(--accent); transform: scale(1.
 .text-button:hover { background: var(--accent-soft); }
 .text-button.muted { color: var(--muted); font-weight: 500; }
 .text-button.strong { font-weight: 700; }
+
+/* Free time before planning: drive, safety margin, usable time */
+.budget-bar { margin-bottom: 1rem; padding: 0.75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--accent-soft); }
+.budget-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.5rem; }
+.budget-title { font-size: 0.85rem; font-weight: 600; color: var(--accent); }
+.budget-total { font-weight: 700; font-variant-numeric: tabular-nums; }
+.budget-total.low, .budget-legend .low { color: #9a6a00; }
+.budget-track { display: flex; height: 8px; overflow: hidden; border-radius: 4px; background: var(--line); }
+.budget-drive { background: #8b8fa3; }
+.budget-margin { background: #c9cbd8; }
+.budget-free { background: var(--accent); }
+.budget-legend { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 0.75rem; margin-top: 0.5rem; font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.budget-legend .usable { color: var(--accent); font-weight: 600; }
+.budget-note { margin-top: 0.4rem; font-size: 0.85rem; color: #7a5a00; }

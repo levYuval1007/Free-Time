@@ -1,15 +1,18 @@
 import { useRef, useState } from "react";
 import { api, errorMessage } from "./api";
 import { ArrivalTimePicker } from "./components/ArrivalTimePicker";
+import { BudgetBar } from "./components/BudgetBar";
 import { PlaceField } from "./components/PlaceField";
 import { ResultPanel } from "./components/ResultPanel";
 import { TripMap } from "./components/TripMap";
 import { TripSheet } from "./components/TripSheet";
+import { useBudgetPreview } from "./hooks/useBudgetPreview";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useUserLocation } from "./hooks/useUserLocation";
 import { focusPointFor } from "./lib/carousel";
 import { clockTime, newSessionId, parseArriveBy, shortLabel } from "./lib/format";
 import { pollJob } from "./lib/polling";
+import { PREFERENCE_TAGS, hasTerm, toggleTerm } from "./lib/preferences";
 import type { PlanResult, SelectedPlace, TripResult } from "./types";
 
 export default function App() {
@@ -28,6 +31,7 @@ export default function App() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [editing, setEditing] = useState(false);
   const isPhone = useMediaQuery("(max-width: 800px)");
+  const budgetPreview = useBudgetPreview(from, to, arrive);
 
   function changePlace(set: (place: SelectedPlace | null) => void) {
     return (place: SelectedPlace | null) => {
@@ -178,6 +182,7 @@ export default function App() {
           onError={setError}
         />
         <ArrivalTimePicker value={arrive} onChange={setArrive} />
+        <BudgetBar preview={budgetPreview} />
 
         <div className="form-group">
           <label htmlFor="preferences">What are you in the mood for? (optional)</label>
@@ -189,6 +194,22 @@ export default function App() {
             placeholder="Quiet places, coffee first, good with kids..."
             onChange={(e) => setPreferences(e.target.value)}
           />
+          <div className="chips tag-chips" role="group" aria-label="Quick preferences">
+            {PREFERENCE_TAGS.map((tag) => {
+              const active = hasTerm(preferences, tag.term);
+              return (
+                <button
+                  key={tag.term}
+                  type="button"
+                  className={`chip${active ? " active" : ""}`}
+                  aria-pressed={active}
+                  onClick={() => setPreferences(toggleTerm(preferences, tag.term))}
+                >
+                  <span aria-hidden="true">{tag.emoji}</span> {tag.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <button className="primary" disabled={!from || !to || loading} onClick={() => void planTrip()}>
