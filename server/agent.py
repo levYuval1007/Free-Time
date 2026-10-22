@@ -20,7 +20,7 @@ log = logging.getLogger("agent")
 
 MODEL = "claude-sonnet-5"
 MAX_ROUNDS = 8
-MAX_TOKENS = 2000
+MAX_TOKENS = 4000  # per reply, thinking included; a reply cut off at the cap ends the run (too_long). Only generated tokens are billed.
 JOB_TOKEN_BUDGET = 60_000  # input + output + cache tokens for one plan; real runs use about 12k to 19k
 MAX_PREFERENCES_CHARS = 500
 REQUEST_TIMEOUT_S = 45

@@ -138,9 +138,10 @@ class PriceAndReserveTests(unittest.TestCase):
         self.assertFalse(assumed)
         self.assertEqual(prices["input_tokens"], 1.0)
 
-    def test_the_reserve_for_sonnet_is_about_five_cents(self):
-        # 8000 tokens * 1.5 * $2.5 per million (cache write) + 2000 output tokens * $10 per million
-        self.assertAlmostEqual(spend().next_call_reserve(), 0.05, places=3)
+    def test_the_reserve_for_sonnet_covers_a_big_call_and_a_full_length_answer(self):
+        # 8000 tokens * 1.5 * $2.5 per million (cache write) + a full answer at $10 per million
+        expected = 8000 * 1.5 * 2.5 / 1e6 + agent.MAX_TOKENS * 10 / 1e6
+        self.assertAlmostEqual(spend().next_call_reserve(), expected, places=6)
 
     def test_the_reserve_is_far_smaller_for_a_cheap_model(self):
         cheap = comparison.Spend(0.30, comparison.assumed_prices("claude-haiku-5-5"), True)
